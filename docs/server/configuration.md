@@ -29,6 +29,20 @@
 | `CHROMADB_HOST` | `chromadb` | ChromaDB 主机（容器名） |
 | `CHROMADB_PORT` | `8000` | 容器内端口 |
 
+## MinerU PDF 转换
+
+PDF 导入依赖 [MinerU](https://github.com/opendatalab/MinerU) 4.x 的 V1 API。留空 `MINERU_API_URL` 时 PDF 导入不可用，DOCX / Markdown / 图片不受影响。
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MINERU_API_URL` | 空 | MinerU API 地址，如 `http://qb-mineru-standalone:8000`；不要带 `/v1` |
+| `MINERU_API_KEY` | 空 | MinerU 启动时配置的 API Key；为空则匿名访问 |
+| `MINERU_TIER` | `standard` | 解析档位：`flash` / `basic` / `standard` / `advanced` |
+| `MINERU_TIMEOUT_SECONDS` | `600` | 智能导入同步等待上限（秒） |
+| `MINERU_WORKER_TIMEOUT_SECONDS` | `1800` | 批量导入 Worker 等待上限（秒） |
+
+CPU 部署的 `standard` 档位约 9–11 秒/页，内存峰值约 7 GB，建议 MinerU 保持单并发。部署步骤见 [Docker Compose 部署](/server/docker#mineru-pdf-转换服务)。
+
 ## 运行时
 
 | 变量 | 默认值 | 说明 |

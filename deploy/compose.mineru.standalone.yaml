@@ -1,0 +1,44 @@
+# MinerU 4.x CPU standalone deployment for local verification.
+#
+#   docker compose -f deploy/compose.mineru.standalone.yaml up -d
+#   docker exec qb-mineru-standalone curl -fsS http://localhost:8000/v1/health
+#
+# The API is intentionally not published to the host. QB reaches it over a
+# shared Docker network (see docs/server/docker.md).
+name: mineru-standalone
+
+services:
+  mineru:
+    image: qb-mineru-cpu:4.0
+    build:
+      context: ./mineru
+      dockerfile: Dockerfile
+    container_name: qb-mineru-standalone
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      MINERU_HOME: /models
+      MINERU_MODEL_SOURCE: ${MINERU_MODEL_SOURCE:-huggingface}
+      MINERU_MODEL_SMALL_BACKEND: onnx
+      MINERU_MODEL_VLM_ENGINE: llama-cpp
+      MINERU_TABLE_DEVICE: cpu
+    volumes:
+      - mineru-models:/models
+      - mineru-input:/data/input
+      - mineru-output:/data/output
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+volumes:
+  mineru-models:
+  mineru-input:
+  mineru-output:

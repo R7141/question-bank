@@ -3,7 +3,13 @@ from pathlib import Path
 from typing import BinaryIO, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.importing.extract import AIExtractor, ExtractionStrategy, TemplateExtractor
-from app.services.importing.ingest import DocxIngestor, ImageIngestor, MarkdownArchiveIngestor, MarkdownIngestor
+from app.services.importing.ingest import (
+    DocxIngestor,
+    ImageIngestor,
+    MarkdownArchiveIngestor,
+    MarkdownIngestor,
+    PdfIngestor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +22,7 @@ class DocProcessor:
         self._markdown_ingestor = MarkdownIngestor()
         self._markdown_archive_ingestor = MarkdownArchiveIngestor()
         self._image_ingestor = ImageIngestor()
+        self._pdf_ingestor = PdfIngestor()
 
     def _extractor_for(self, method: str) -> ExtractionStrategy:
         return self._template_extractor if method == "structured" else self._ai_extractor
@@ -101,5 +108,21 @@ class DocProcessor:
             "questions": extraction.questions,
             "paper": extraction.paper,
         }
+
+    async def process_pdf(self, file_path: Path, db: AsyncSession = None, task_id: str = None, mode: str = "extract", method: str = "ai", subject_id: Optional[int] = None, timeout: Optional[int] = None) -> dict:
+        """Convert PDF to markdown via MinerU, extract media, and parse questions."""
+        doc = await self._pdf_ingestor.ingest(
+            file_path, task_id=task_id, filename=file_path.name, timeout=timeout
+        )
+        extraction = await self._extractor_for(method).extract(
+            doc.markdown, db, filename=doc.filename, mode=mode, subject_id=subject_id
+        )
+        return {
+            "task_id": doc.task_id,
+            "content": doc.markdown,
+            "questions": extraction.questions,
+            "paper": extraction.paper,
+        }
+
 
 doc_processor = DocProcessor()

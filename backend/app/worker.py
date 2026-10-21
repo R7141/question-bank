@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 sys.path.append(str(Path(__file__).parent.parent))
 
 from app.db.session import SessionLocal
-from app.core.config import get_db_url, is_configured
+from app.core.config import get_db_url, is_configured, settings
 from app.models.import_task import ImportTask, ImportTaskStatus
 from app.models.question import QuestionStatus
 from app.models.user import User
@@ -57,6 +57,17 @@ async def process_task(db: AsyncSession, task: ImportTask):
             import uuid
             proc_task_id = str(uuid.uuid4())
             result = await doc_processor.process_docx(file_path, db=db, task_id=proc_task_id, mode=task.mode or "extract", subject_id=subject_id)
+        elif task.file_type == 'pdf':
+            import uuid
+            proc_task_id = str(uuid.uuid4())
+            result = await doc_processor.process_pdf(
+                file_path,
+                db=db,
+                task_id=proc_task_id,
+                mode=task.mode or "extract",
+                subject_id=subject_id,
+                timeout=settings.MINERU_WORKER_TIMEOUT_SECONDS,
+            )
         elif task.file_type == 'markdown':
             content = file_path.read_text(encoding='utf-8')
             import uuid

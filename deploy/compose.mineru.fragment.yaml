@@ -1,0 +1,44 @@
+# Merge this service into the QB docker-compose.yml when MinerU should live in
+# the same Compose project/network as backend + worker.
+#
+# Existing standalone deployments can instead attach the running container:
+#   docker network connect question-bank_default qb-mineru-standalone
+#
+# Then set in QB .env:
+#   MINERU_API_URL=http://qb-mineru-standalone:8000
+# (or http://qb-mineru:8000 when using this Compose service).
+services:
+  mineru:
+    image: qb-mineru-cpu:4.0
+    build:
+      context: ./deploy/mineru
+      dockerfile: Dockerfile
+    container_name: qb-mineru
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      MINERU_HOME: /models
+      MINERU_MODEL_SOURCE: ${MINERU_MODEL_SOURCE:-huggingface}
+      MINERU_MODEL_SMALL_BACKEND: onnx
+      MINERU_MODEL_VLM_ENGINE: llama-cpp
+      MINERU_TABLE_DEVICE: cpu
+    volumes:
+      - mineru-models:/models
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+volumes:
+  # Reuse the model cache created by deploy/compose.mineru.standalone.yaml.
+  # Remove `external` if this Compose project should own a fresh volume.
+  mineru-models:
+    external: true
+    name: mineru-standalone_mineru-models

@@ -54,6 +54,11 @@ services:
       CHROMADB_HOST: ${CHROMADB_HOST:-chromadb}
       CHROMADB_PORT: ${CHROMADB_PORT:-8000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MINERU_API_URL: ${MINERU_API_URL:-}
+      MINERU_API_KEY: ${MINERU_API_KEY:-}
+      MINERU_TIER: ${MINERU_TIER:-standard}
+      MINERU_TIMEOUT_SECONDS: ${MINERU_TIMEOUT_SECONDS:-600}
+      MINERU_WORKER_TIMEOUT_SECONDS: ${MINERU_WORKER_TIMEOUT_SECONDS:-1800}
     volumes:
       # DATA_DIR=/data is baked into the image: uploads/, static/media/, config.json.
       - app_data:/data
@@ -77,6 +82,11 @@ services:
       CHROMADB_HOST: ${CHROMADB_HOST:-chromadb}
       CHROMADB_PORT: ${CHROMADB_PORT:-8000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MINERU_API_URL: ${MINERU_API_URL:-}
+      MINERU_API_KEY: ${MINERU_API_KEY:-}
+      MINERU_TIER: ${MINERU_TIER:-standard}
+      MINERU_TIMEOUT_SECONDS: ${MINERU_TIMEOUT_SECONDS:-600}
+      MINERU_WORKER_TIMEOUT_SECONDS: ${MINERU_WORKER_TIMEOUT_SECONDS:-1800}
     volumes:
       - app_data:/data
     depends_on:

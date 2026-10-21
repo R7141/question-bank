@@ -9,6 +9,7 @@
 | `backend` | FastAPI 后端 API | 8000 |
 | `worker` | 后台任务处理（导入等） | — |
 | `frontend` | 前端（Nginx 提供 SPA） | 80 |
+| `mineru`（可选） | PDF → Markdown 转换（MinerU 4.x） | Docker 内网 8000 |
 
 ## 前置要求
 
@@ -73,6 +74,66 @@ docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d
 
 - 前端：`http://<服务器IP>`（默认 80 端口）
 - 后端 API 文档（Swagger）：`http://<服务器IP>:8000/docs`
+
+## MinerU PDF 转换服务
+
+PDF 导入需要 MinerU 4.x。若不需要 PDF，可跳过本节，DOCX / Markdown / 图片导入不受影响。
+
+仓库已提供 CPU 版构建文件：
+
+- `deploy/mineru/Dockerfile`
+- `deploy/compose.mineru.standalone.yaml`
+- `deploy/compose.mineru.fragment.yaml`
+
+### 方式 A：现有独立容器接入 QB 网络（推荐）
+
+MinerU 已在独立容器 `qb-mineru-standalone` 中运行、未发布宿主端口时，把它接入 QB 默认网络即可：
+
+```bash
+docker network connect question-bank_default qb-mineru-standalone
+```
+
+在 QB `.env` 中设置：
+
+```env
+MINERU_API_URL=http://qb-mineru-standalone:8000
+```
+
+然后重启 backend / worker：
+
+```bash
+docker compose up -d backend worker
+```
+
+验证连通性：
+
+```bash
+docker compose exec backend python -c "import httpx; print(httpx.get('http://qb-mineru-standalone:8000/v1/health').json())"
+```
+
+### 方式 B：作为 QB Compose 服务运行
+
+把 `deploy/compose.mineru.fragment.yaml` 中的 `mineru` 服务合并到 `docker-compose.yml`，首次构建：
+
+```bash
+docker build -t qb-mineru-cpu:4.0 deploy/mineru
+```
+
+模型缓存使用独立命名卷；片段默认复用 `mineru-standalone_mineru-models`。如果没有该卷，把片段里的 `external: true` 与 `name:` 删除，让 Compose 新建卷。首次启动后下载模型：
+
+```bash
+docker compose exec mineru mineru-kit models download --tier standard --small-backend onnx --vlm-engine llama-cpp --source huggingface
+```
+
+再在 `.env` 中设置：
+
+```env
+MINERU_API_URL=http://qb-mineru:8000
+```
+
+::: tip 资源占用
+CPU `standard` 档位实测约 9–11 秒/页，容器内存峰值约 7 GB。请保持 MinerU 单并发，并确保 Docker 可用内存足够；大批量导入建议走批量导入队列。
+:::
 
 ## 首次配置
 

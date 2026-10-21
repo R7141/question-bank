@@ -84,6 +84,16 @@ class Settings(BaseSettings):
     # config.json is present, the app boots into first-run "setup mode".
     DB_URL: str = ""
 
+    # MinerU: PDF → Markdown conversion service (MinerU 4.x V1 API).
+    # Empty URL disables PDF import with an actionable error instead of guessing
+    # a default host that may not exist in a given deployment.
+    MINERU_API_URL: str = ""
+    MINERU_API_KEY: str = ""
+    MINERU_TIER: str = "standard"
+    MINERU_TIMEOUT_SECONDS: int = 600
+    MINERU_WORKER_TIMEOUT_SECONDS: int = 1800
+    MINERU_POLL_INTERVAL_SECONDS: float = 3.0
+
     # ChromaDB
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001

@@ -19,6 +19,7 @@ from urllib.parse import quote, unquote, urlsplit
 import pypandoc
 
 from app.core.config import settings
+from app.services.mineru import MinerUClient
 
 
 @dataclass
@@ -274,3 +275,45 @@ class ImageIngestor:
             image_data=image_data,
             image_url=f"/static/media/{task_id}/{image_filename}",
         )
+
+
+class PdfIngestor:
+    """PDF 摄取:MinerU → Markdown + 图片,再归一为 CanonicalDoc。
+
+    MinerU 的 zip 产物结构与 markdown 归档一致(markdown.md + images/*),因此图片落地
+    和引用重写直接复用 `extract_archive_and_rewrite`,下游抽取器无需感知 PDF。
+    """
+
+    def __init__(self, client: Optional[MinerUClient] = None) -> None:
+        self.client = client or MinerUClient()
+
+    async def ingest(
+        self,
+        file_path: Path,
+        *,
+        task_id: Optional[str] = None,
+        filename: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> CanonicalDoc:
+        task_id = _ensure_task_id(task_id)
+        result = await self.client.parse_pdf(
+            file_path, task_id=task_id, timeout=timeout
+        )
+
+        if result.zip_path is not None:
+            parts = await asyncio.to_thread(
+                extract_archive_and_rewrite, result.zip_path, media_id=task_id
+            )
+            markdown = "\n\n".join(md for _, md in parts)
+        else:
+            markdown = result.markdown or ""
+
+        if not markdown.strip():
+            raise RuntimeError("MinerU 未返回有效的 Markdown 内容")
+
+        task_dir = settings.UPLOAD_DIR / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        output_path = task_dir / "content.md"
+        await asyncio.to_thread(output_path.write_text, markdown, encoding="utf-8")
+
+        return CanonicalDoc(task_id=task_id, markdown=markdown, filename=filename or file_path.name)

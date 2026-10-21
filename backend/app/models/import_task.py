@@ -31,7 +31,7 @@ class ImportTask(Base):
     
     file_path = Column(String(512), nullable=False)
     original_filename = Column(String(255), nullable=False)
-    file_type = Column(String(20), nullable=False) # docx, markdown
+    file_type = Column(String(20), nullable=False) # docx, markdown, pdf
     mode = Column(String(20), default="extract") # extract, solve
     
     status = Column(SQLEnum(ImportTaskStatus, values_callable=lambda x: [e.value for e in x]), default=ImportTaskStatus.PENDING, index=True)

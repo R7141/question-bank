@@ -10,12 +10,29 @@
 | 类型 | 扩展名 | AI 智能抽取 | 标签精准解析 |
 |------|--------|:---:|:---:|
 | Word | `.docx` | ✅ | ✅ |
+| PDF | `.pdf` | ✅（经 MinerU 转 Markdown） | — |
 | Markdown | `.md` / 粘贴文本 | ✅ | ✅ |
 | 图片 | `.png` `.jpg` `.jpeg` `.webp` | ✅（视觉模型 OCR） | — |
 
 ::: tip 前置条件
 **AI 智能抽取**依赖 AI 模型：文本类使用文本模型，图片类使用**视觉模型**。请先在 [AI 供应商与模型](/admin/ai-config) 配置并激活对应模型。**标签精准解析**无需任何 AI 配置。
+
+**PDF 导入**还需要部署 MinerU 并配置 `MINERU_API_URL`。MinerU 负责把 PDF 转成带图片的 Markdown，之后仍走上面的抽取、审核、入库流程。MinerU 不可用时接口会返回明确错误，不会静默丢题。
 :::
+
+## PDF 导入（MinerU）
+
+PDF 先由 MinerU 转成 Markdown（含图片），再复用与 Markdown 相同的抽取链路：
+
+```
+PDF → MinerU 4.x /v1/tasks → Markdown + images → AI 抽取 / 标签解析 → 审核 → 入库
+```
+
+- 智能导入：上传 PDF 后同步等待转换结果，默认最长 600 秒。
+- 批量导入：任务进入 Worker 队列，默认最长 1800 秒，失败可在导入历史中重试。
+- 默认解析档位 `standard`；CPU 部署约 9–11 秒/页，页数较多时建议使用批量导入。
+- MinerU 产出的图片会保存到 `/static/media/{task_id}/images/...`，并参与后续图片遮罩/还原。
+- 服务端配置见 [配置参考](/server/configuration#mineru-pdf-转换)；部署方式见 [Docker Compose 部署](/server/docker#mineru-pdf-转换服务)。
 
 ## 标签精准解析
 
