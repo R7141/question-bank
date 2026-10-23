@@ -69,7 +69,6 @@ const markdownContent = ref('')
 const pastedImage = ref<string | null>(null)
 const isUploading = ref(false)
 const pdfTaskId = ref<number | null>(null)
-const pdfStage = ref<string | null>(null)
 const pdfPollTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const isImporting = ref(false)
 const error = ref<string | null>(null)
@@ -179,25 +178,6 @@ const fetchImportStatus = async () => {
         kpVectorized.value = true
     }
 }
-const PDF_STAGE_LABELS: Record<string, string> = {
-    queued: 'PDF 排队中，等待后台处理…',
-    mineru: 'MinerU 正在转换 PDF…',
-    extracting: 'AI 正在抽取题目…',
-    completed: 'PDF 处理完成',
-    failed: 'PDF 处理失败',
-    cancelled: 'PDF 导入已取消',
-}
-
-const uploadStatusText = computed(() => {
-    if (!isUploading.value) {
-        return parseMethod.value === 'ai' ? '开始智能识别' : '开始模板解析'
-    }
-    if (file.value?.name.toLowerCase().endsWith('.pdf') && pdfStage.value) {
-        return PDF_STAGE_LABELS[pdfStage.value] ?? 'PDF 处理中…'
-    }
-    return '正在拼命识别中...'
-})
-
 const clearPdfPoll = () => {
     if (pdfPollTimer.value) {
         clearTimeout(pdfPollTimer.value)
@@ -208,7 +188,6 @@ const clearPdfPoll = () => {
 const clearPdfTask = () => {
     clearPdfPoll()
     pdfTaskId.value = null
-    pdfStage.value = null
     if (typeof window !== 'undefined') {
         window.localStorage.removeItem('qb_pdf_import_task')
     }
@@ -221,11 +200,15 @@ const storePdfTask = (taskId: number) => {
     }
 }
 
+const cancelPdfTaskQuietly = (taskId: number | null) => {
+    if (!taskId) return
+    void $api(`/imports/${taskId}/cancel`, { method: 'POST' }).catch(() => {})
+}
+
 const pollPdfTask = async (taskId: number) => {
     clearPdfPoll()
     try {
         const data = await $api<any>(`/imports/${taskId}`)
-        pdfStage.value = data.stage ?? data.status
         if (data.status === 'completed') {
             const result = await $api<any>(`/imports/${taskId}/result`)
             clearPdfTask()
@@ -235,6 +218,9 @@ const pollPdfTask = async (taskId: number) => {
             return
         }
         if (data.status === 'failed' || data.status === 'cancelled') {
+            if (data.status === 'failed') {
+                cancelPdfTaskQuietly(taskId)
+            }
             error.value = data.status === 'cancelled'
                 ? 'PDF 导入已取消'
                 : (data.error_message || 'PDF 处理失败')
@@ -244,25 +230,8 @@ const pollPdfTask = async (taskId: number) => {
         }
         pdfPollTimer.value = setTimeout(() => pollPdfTask(taskId), 3000)
     } catch (e: any) {
+        cancelPdfTaskQuietly(taskId)
         error.value = e.data?.detail || e.message || '查询 PDF 导入状态失败'
-        clearPdfTask()
-        isUploading.value = false
-    }
-}
-
-const cancelPdfUpload = async () => {
-    const taskId = pdfTaskId.value
-    if (!taskId) {
-        clearPdfTask()
-        isUploading.value = false
-        return
-    }
-    try {
-        await $api(`/imports/${taskId}/cancel`, { method: 'POST' })
-        toast.info('已取消 PDF 导入')
-    } catch (e: any) {
-        toast.error('取消 PDF 导入失败: ' + (e.data?.detail || e.message))
-    } finally {
         clearPdfTask()
         isUploading.value = false
     }
@@ -275,7 +244,6 @@ onMounted(async () => {
         const taskId = saved ? Number(saved) : null
         if (taskId && Number.isFinite(taskId)) {
             isUploading.value = true
-            pdfStage.value = 'queued'
             await pollPdfTask(taskId)
         }
     }
@@ -448,9 +416,9 @@ const handleUploadPdf = async () => {
             body: formData,
         })
         storePdfTask(data.task_id)
-        pdfStage.value = data.stage ?? 'queued'
         await pollPdfTask(data.task_id)
     } catch (e: any) {
+        cancelPdfTaskQuietly(pdfTaskId.value)
         clearPdfTask()
         isUploading.value = false
         error.value = e.data?.detail || e.message
@@ -808,11 +776,7 @@ const reset = () => {
                                     </template>
                                     
                                     <div class="mt-2 w-full">
-                                        <Button v-if="isUploading && pdfTaskId" variant="outline" class="w-full" @click.stop="cancelPdfUpload">
-                                            <Trash2 class="h-4 w-4 mr-2" />
-                                            取消 PDF 导入
-                                        </Button>
-                                        <Button v-else variant="outline" class="w-full" @click.stop="reset" :disabled="isUploading">
+                                        <Button variant="outline" class="w-full" @click.stop="reset" :disabled="isUploading">
                                             <Trash2 class="h-4 w-4 mr-2" />
                                             删除并重新选择
                                         </Button>
@@ -963,7 +927,7 @@ const reset = () => {
                             <Loader2 v-if="isUploading" class="mr-2 h-6 w-6 animate-spin" />
                             <Sparkles v-else-if="parseMethod === 'ai'" class="mr-2 h-6 w-6" />
                             <FileCode v-else class="mr-2 h-6 w-6" />
-                            {{ uploadStatusText }}
+                            {{ isUploading ? '正在拼命识别中...' : (parseMethod === 'ai' ? '开始智能识别' : '开始模板解析') }}
                         </Button>
                         <p v-if="(!file && !pastedImage && !markdownContent.trim())" class="text-center text-sm text-destructive mt-3">
                             请在上方提供文件或纯文本内容

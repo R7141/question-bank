@@ -216,6 +216,9 @@ async def process_task(db: AsyncSession, task: ImportTask):
         if task.status == ImportTaskStatus.CANCELLED:
             logger.info("Task %s was cancelled; ignoring processing error.", task.id)
             return
+        if task.source == SMART_IMPORT_SOURCE and task.remote_task_id:
+            await MinerUClient().cancel_task(task.remote_task_id)
+
         task.status = ImportTaskStatus.FAILED
         task.error_message = str(e)
         if task.source == SMART_IMPORT_SOURCE:

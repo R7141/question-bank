@@ -127,9 +127,16 @@ async def test_worker_marks_smart_pdf_failure(
     await db_session.commit()
     await db_session.refresh(task)
 
+    cancelled = []
+
+    async def fake_cancel(self, remote_task_id):
+        cancelled.append(remote_task_id)
+
     async def fake_process_pdf(*args, **kwargs):
+        await kwargs["on_submitted"]("job-fail")
         raise RuntimeError("MinerU 转换失败")
 
+    monkeypatch.setattr(worker.MinerUClient, "cancel_task", fake_cancel)
     monkeypatch.setattr(doc_processor, "process_pdf", fake_process_pdf)
 
     await worker.process_task(db_session, task)
@@ -137,4 +144,6 @@ async def test_worker_marks_smart_pdf_failure(
 
     assert task.status == ImportTaskStatus.FAILED
     assert task.stage == "failed"
+    assert task.remote_task_id == "job-fail"
+    assert cancelled == ["job-fail"]
     assert "MinerU" in (task.error_message or "")
