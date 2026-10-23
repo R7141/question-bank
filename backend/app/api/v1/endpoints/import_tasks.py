@@ -6,7 +6,9 @@ from sqlalchemy.orm import selectinload
 from app import models, schemas
 from app.api import deps
 from app.core.config import settings
-from app.models.import_task import ImportTask, ImportTaskStatus
+from app.models.import_task import SMART_IMPORT_SOURCE, ImportTask, ImportTaskStatus
+from app.services.importing.duplicates import attach_duplicate_hint
+from app.services.mineru import MinerUClient
 from app.services.importing.ingest import extract_archive_and_rewrite
 import shutil
 import uuid
@@ -61,6 +63,7 @@ async def get_queue_status(
             "id": task.id,
             "original_filename": task.original_filename,
             "status": task.status,
+            "stage": task.stage,
             "created_at": task.created_at,
             "owner_name": task.user.full_name if task.user else "Unknown",
             "queue_position": index + 1
@@ -118,6 +121,7 @@ async def list_import_tasks(
                 "id": t.id,
                 "original_filename": t.original_filename,
                 "status": t.status,
+                "stage": t.stage,
                 "created_at": t.created_at,
                 "error_message": t.error_message,
                 "result_summary": t.result_summary,
@@ -298,12 +302,52 @@ async def get_import_task_status(
         "id": task.id,
         "original_filename": task.original_filename,
         "status": task.status,
+        "stage": task.stage,
         "error_message": task.error_message,
         "result_summary": task.result_summary,
         "created_at": task.created_at,
         "description": task.description,
-        "source": task.source
+        "source": task.source,
     }
+
+
+@router.get("/{task_id}/result", response_model=dict)
+async def get_smart_import_result(
+    *,
+    db: deps.SessionDep,
+    task_id: int,
+    current_user: models.User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Return the stored extraction result for an async smart PDF import."""
+    task = (
+        await db.execute(select(ImportTask).where(ImportTask.id == task_id))
+    ).scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.user_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if task.source != SMART_IMPORT_SOURCE:
+        raise HTTPException(status_code=400, detail="Not a smart PDF import task")
+    if task.status == ImportTaskStatus.FAILED:
+        raise HTTPException(status_code=409, detail=task.error_message or "Task failed")
+    if task.status != ImportTaskStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail="Task is not completed yet")
+    if not task.result_path:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    result_path = Path(task.result_path)
+    if not result_path.exists():
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    result = json.loads(await asyncio.to_thread(result_path.read_text, encoding="utf-8"))
+    result["file_path"] = task.file_path
+    await attach_duplicate_hint(
+        result,
+        db,
+        digest=task.content_sha256,
+        exclude_task_id=task.id,
+    )
+    return result
 
 @router.post("/{task_id}/cancel", response_model=dict)
 async def cancel_import_task(
@@ -327,10 +371,13 @@ async def cancel_import_task(
         
     if task.status in [ImportTaskStatus.COMPLETED, ImportTaskStatus.FAILED, ImportTaskStatus.CANCELLED]:
         raise HTTPException(status_code=400, detail="Task already finished")
-        
-    # Update task status
+
     task.status = ImportTaskStatus.CANCELLED
+    task.stage = "cancelled"
     await db.commit()
+
+    if task.source == SMART_IMPORT_SOURCE and task.remote_task_id:
+        await MinerUClient().cancel_task(task.remote_task_id)
     
     return {"message": "Task cancelled"}
 
@@ -373,10 +420,13 @@ async def retry_import_task(
         
     # Reset task status
     task.status = ImportTaskStatus.PENDING
+    task.stage = "queued"
     task.error_message = None
     task.result_summary = None
-    task.created_at = datetime.utcnow() # Update timestamp to move to top of queue? Or keep original? Maybe update created_at so it looks new.
-    
+    task.result_path = None
+    task.remote_task_id = None
+    task.created_at = datetime.utcnow()
+
     await db.commit()
     
     return {"message": "Task queued for retry"}
@@ -401,11 +451,17 @@ async def delete_import_task(
     if task.user_id != current_user.id and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Not enough permissions")
         
-    # Delete file if exists
+    # Delete file and smart-import artifacts if they exist
     try:
         file_path = Path(task.file_path)
         if file_path.exists() and file_path.is_file():
             file_path.unlink()
+        if task.result_path:
+            result_path = Path(task.result_path)
+            if result_path.exists() and result_path.is_file():
+                result_path.unlink()
+        shutil.rmtree(settings.UPLOAD_DIR / str(task.id), ignore_errors=True)
+        shutil.rmtree(settings.MEDIA_DIR / str(task.id), ignore_errors=True)
     except Exception as e:
         print(f"Error deleting file: {e}")
         

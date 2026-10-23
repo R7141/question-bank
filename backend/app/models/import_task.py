@@ -4,6 +4,10 @@ from datetime import datetime
 import enum
 from .base import Base
 
+SMART_IMPORT_SOURCE = "smart_import_pdf"
+BATCH_IMPORT_SOURCE = "batch_upload"
+
+
 class ImportTaskStatus(str, enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -33,10 +37,17 @@ class ImportTask(Base):
     original_filename = Column(String(255), nullable=False)
     file_type = Column(String(20), nullable=False) # docx, markdown, pdf
     mode = Column(String(20), default="extract") # extract, solve
+    method = Column(String(20), nullable=True) # ai, structured (smart import)
+    subject_id = Column(Integer, nullable=True, index=True) # smart import's chosen subject
+    stage = Column(String(20), nullable=True) # queued, mineru, extracting, completed, failed, cancelled
     
     status = Column(SQLEnum(ImportTaskStatus, values_callable=lambda x: [e.value for e in x]), default=ImportTaskStatus.PENDING, index=True)
     error_message = Column(Text, nullable=True)
     result_summary = Column(Text, nullable=True) # JSON string of results
+    # 智能导入的完整抽取结果写入 JSON 文件,避免 MySQL TEXT 溢出。
+    result_path = Column(String(512), nullable=True)
+    # MinerU 侧任务 ID;取消/超时时用于 DELETE /v1/tasks/{id}。
+    remote_task_id = Column(String(64), nullable=True)
 
     # 上传文件内容的 SHA-256;仅用于"完全一致"的重复上传提示,不做近似查重。
     content_sha256 = Column(String(64), nullable=True, index=True)

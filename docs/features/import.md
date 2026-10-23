@@ -28,10 +28,11 @@ PDF 先由 MinerU 转成 Markdown（含图片），再复用与 Markdown 相同�
 PDF → MinerU 4.x /v1/tasks → Markdown + images → AI 抽取 / 标签解析 → 审核 → 入库
 ```
 
-- 智能导入：上传 PDF 后同步等待转换结果，默认最长 600 秒。
-- 批量导入：任务进入 Worker 队列，默认最长 1800 秒，失败可在导入历史中重试。
-- 默认解析档位 `standard`；CPU 部署约 9–11 秒/页，页数较多时建议使用批量导入。
+- 智能导入：上传 PDF 后立即返回任务 ID，后台 Worker 执行 MinerU 与 AI 抽题；页面轮询显示 `排队中 → PDF 转换中 → AI 抽题中 → 完成`，完成后进入审核页。
+- 批量导入：任务进入 Worker 队列，与智能导入共用同一 Worker；失败可在导入历史中重试。
+- 默认解析档位 `standard`；CPU 部署约 9–11 秒/页，扫描件或复杂排版可能显著更慢，后台任务不会受浏览器/Nginx 超时影响。
 - MinerU 产出的图片会保存到 `/static/media/{task_id}/images/...`，并参与后续图片遮罩/还原。
+- 智能导入页支持取消任务；取消时会尽量同时取消 MinerU 侧任务。
 - 服务端配置见 [配置参考](/server/configuration#mineru-pdf-转换)；部署方式见 [Docker Compose 部署](/server/docker#mineru-pdf-转换服务)。
 
 ## 标签精准解析

@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 import httpx
 
@@ -42,6 +42,7 @@ class MinerUParseResult:
 
     zip_path: Optional[Path] = None
     markdown: Optional[str] = None
+    remote_task_id: Optional[str] = None
 
 
 def _snippet(value: Any, limit: int = 240) -> str:
@@ -104,6 +105,7 @@ class MinerUClient:
         *,
         task_id: str,
         timeout: Optional[int] = None,
+        on_submitted: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> MinerUParseResult:
         """把 PDF 转成 Markdown 或结果 zip。调用方负责后续图片路径重写。"""
         if not self.configured:
@@ -121,8 +123,31 @@ class MinerUClient:
         async with self._client(timeout=timeout_seconds) as client:
             remote_task_id = await self._submit(client, filename=file_path.name, data=data)
             logger.info("MinerU task %s submitted for %s", remote_task_id, file_path.name)
+            if on_submitted is not None:
+                await on_submitted(remote_task_id)
             await self._wait(client, remote_task_id, deadline)
-            return await self._download(client, remote_task_id, task_id=task_id, deadline=deadline)
+            result = await self._download(
+                client, remote_task_id, task_id=task_id, deadline=deadline
+            )
+            result.remote_task_id = remote_task_id
+            return result
+
+    async def cancel_task(self, remote_task_id: str) -> None:
+        """Best-effort cancel of a queued/running MinerU task (DELETE /v1/tasks/{id})."""
+        if not self.configured or not remote_task_id:
+            return
+        try:
+            async with self._client(timeout=30) as client:
+                response = await client.delete(f"v1/tasks/{remote_task_id}")
+                if response.status_code >= 400 and response.status_code != 404:
+                    logger.warning(
+                        "MinerU cancel %s failed: HTTP %s %s",
+                        remote_task_id,
+                        response.status_code,
+                        _snippet(response.text),
+                    )
+        except httpx.HTTPError as exc:
+            logger.warning("MinerU cancel %s failed: %s", remote_task_id, exc)
 
     async def _submit(self, client: httpx.AsyncClient, *, filename: str, data: bytes) -> str:
         try:
@@ -204,7 +229,9 @@ class MinerUClient:
             zip_path = settings.UPLOAD_DIR / task_id / "mineru_result.zip"
             await asyncio.to_thread(zip_path.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(zip_path.write_bytes, body)
-            return MinerUParseResult(zip_path=zip_path)
+            return MinerUParseResult(
+                zip_path=zip_path, remote_task_id=remote_task_id
+            )
 
         try:
             payload = response.json()
@@ -216,7 +243,7 @@ class MinerUClient:
         markdown = self._markdown_from_payload(payload)
         if not markdown:
             raise MinerUError(f"MinerU 结果中没有 Markdown: {_snippet(payload)}")
-        return MinerUParseResult(markdown=markdown)
+        return MinerUParseResult(markdown=markdown, remote_task_id=remote_task_id)
 
     def _checked_json(self, response: httpx.Response, *, action: str) -> dict[str, Any]:
         if response.status_code >= 400:

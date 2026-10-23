@@ -138,3 +138,14 @@ async def test_parse_pdf_requires_configuration(upload_dirs):
 
     with pytest.raises(MinerUConfigurationError):
         await MinerUClient(base_url="").parse_pdf(pdf_path, task_id="local-5")
+
+
+async def test_cancel_task_calls_mineru_delete():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        return httpx.Response(200, json={"status": "canceled"})
+
+    await _client(handler).cancel_task("remote-9")
+    assert calls == [("DELETE", "/v1/tasks/remote-9")]

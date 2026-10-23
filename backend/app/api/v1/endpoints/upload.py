@@ -5,17 +5,15 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select
-
+from app import models
 from app.api import deps
 from app.core.config import settings
-from app.models.composition import Composition
-from app.models.import_task import ImportTask
+from app.models.import_task import SMART_IMPORT_SOURCE, ImportTask, ImportTaskStatus
 from app.services.doc_processor import doc_processor
+from app.services.importing.duplicates import attach_duplicate_hint
 from app.services.importing.review import extracted_to_v2_review
-from app.services.mineru import MinerUConfigurationError, MinerUError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,35 +24,6 @@ def _as_review(result: dict, subject_id: int | None) -> dict:
     result["questions"] = extracted_to_v2_review(result.get("questions", []), subject_id=subject_id)
     return result
 
-
-async def _attach_duplicate_hint(result: dict, db, content: bytes) -> dict:
-    """标记“与历史导入文件内容完全一致”。只提示，不阻塞；近似重复不在本期承诺范围。"""
-    digest = hashlib.sha256(content).hexdigest()
-    result["content_sha256"] = digest
-
-    task = (
-        await db.execute(
-            select(ImportTask)
-            .where(ImportTask.content_sha256 == digest)
-            .order_by(ImportTask.created_at.desc())
-        )
-    ).scalars().first()
-    if task is None:
-        result["duplicate_of"] = None
-        return result
-
-    comp = (
-        await db.execute(
-            select(Composition).where(Composition.source_import_task_id == task.id)
-        )
-    ).scalars().first()
-    result["duplicate_of"] = {
-        "import_task_id": task.id,
-        "original_filename": task.original_filename,
-        "imported_at": task.created_at.isoformat() if task.created_at else None,
-        "composition_id": comp.id if comp else None,
-    }
-    return result
 
 class MarkdownContentRequest(BaseModel):
     content: str
@@ -90,7 +59,7 @@ async def upload_docx(
         result = await doc_processor.process_docx(file_path, db=db, mode=mode, method=method, subject_id=subject_id)
         _as_review(result, subject_id)
         result["file_path"] = str(file_path)
-        await _attach_duplicate_hint(result, db, content)
+        await attach_duplicate_hint(result, db, content=content)
         return result
     except Exception as e:
         logger.exception(
@@ -103,17 +72,23 @@ async def upload_docx(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/pdf")
+@router.post("/pdf", status_code=202)
 async def upload_pdf(
     db: deps.SessionDep,
     file: UploadFile = File(...),
     mode: str = "extract",
     method: str = "ai",
     subject_id: int = None,
+    current_user: models.User = Depends(deps.get_current_active_user),
 ):
-    """Convert a PDF to Markdown via MinerU, then reuse the normal extraction flow."""
+    """Queue a PDF smart import task; the worker runs MinerU + AI extraction."""
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only .pdf files are supported")
+    if not settings.MINERU_API_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="未配置 MinerU，无法导入 PDF。请设置 MINERU_API_URL 后重试。",
+        )
 
     upload_session_id = str(uuid.uuid4())
     upload_dir = settings.UPLOAD_DIR / upload_session_id
@@ -122,33 +97,32 @@ async def upload_pdf(
     file_path = upload_dir / file.filename
     content = await file.read()
     await asyncio.to_thread(file_path.write_bytes, content)
+    digest = hashlib.sha256(content).hexdigest()
 
-    try:
-        result = await doc_processor.process_pdf(
-            file_path,
-            db=db,
-            task_id=upload_session_id,
-            mode=mode,
-            method=method,
-            subject_id=subject_id,
-        )
-        _as_review(result, subject_id)
-        result["file_path"] = str(file_path)
-        await _attach_duplicate_hint(result, db, content)
-        return result
-    except MinerUConfigurationError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    except MinerUError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(
-            "Failed to process PDF: filename=%s mode=%s method=%s subject_id=%s",
-            file.filename,
-            mode,
-            method,
-            subject_id,
-        )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    task = ImportTask(
+        user_id=current_user.id,
+        description=f"PDF 智能导入 {file.filename}",
+        source=SMART_IMPORT_SOURCE,
+        file_path=str(file_path),
+        original_filename=file.filename,
+        file_type="pdf",
+        mode=mode,
+        method=method,
+        subject_id=subject_id,
+        stage="queued",
+        status=ImportTaskStatus.PENDING,
+        content_sha256=digest,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+
+    return {
+        "task_id": task.id,
+        "status": task.status,
+        "stage": task.stage,
+        "original_filename": task.original_filename,
+    }
 
 @router.post("/markdown")
 async def upload_markdown(
@@ -182,7 +156,7 @@ async def upload_markdown(
         result = await doc_processor.process_markdown(markdown_content, db=db, filename=file.filename, mode=mode, method=method, subject_id=subject_id)
         _as_review(result, subject_id)
         result["file_path"] = str(file_path)
-        await _attach_duplicate_hint(result, db, markdown_content_bytes)
+        await attach_duplicate_hint(result, db, content=markdown_content_bytes)
         return result
     except Exception as e:
         logger.exception(

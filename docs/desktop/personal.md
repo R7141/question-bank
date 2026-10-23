@@ -9,7 +9,7 @@
 3. **配置 AI**（首次）：进入设置，添加 AI 供应商与模型，详见 [AI 供应商与模型](/admin/ai-config)。
 4. **录入题目**：
    - 手动新建，或
-   - 用 [智能导入](/features/import) 上传 Word / Markdown / 图片，由 AI 抽取。
+   - 用 [智能导入](/features/import) 上传 Word / PDF / Markdown / 图片，由 AI 抽取。
 5. **管理与组卷**：在 [题库管理](/features/questions) 中筛选、编辑、审核，用组稿工作台组卷并导出。
 
 ## 数据存放

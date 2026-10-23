@@ -12,13 +12,20 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from app.db.session import SessionLocal
 from app.core.config import get_db_url, is_configured, settings
-from app.models.import_task import ImportTask, ImportTaskStatus
+from app.models.import_task import (
+    BATCH_IMPORT_SOURCE,
+    SMART_IMPORT_SOURCE,
+    ImportTask,
+    ImportTaskStatus,
+)
 from app.models.question import QuestionStatus
 from app.models.user import User
 from app.services.doc_processor import doc_processor
 from app.services.embedding import reload_embedding_function
 from app.services.importing.contracts import ImportDefaults
 from app.services.importing.normalize import question_importer
+from app.services.importing.review import extracted_to_v2_review
+from app.services.mineru import MinerUClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,31 +33,121 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+class TaskCancelled(Exception):
+    """用户取消后用于中止智能导入流程。"""
+
+
+async def _process_smart_pdf_task(
+    db: AsyncSession,
+    task: ImportTask,
+    *,
+    file_path: Path,
+    subject_id: int | None,
+) -> None:
+    """MinerU + AI 抽取,但只保存可复核结果,不直接入题库。"""
+    proc_task_id = str(task.id)
+
+    async def on_submitted(remote_task_id: str) -> None:
+        task.remote_task_id = remote_task_id
+        await db.commit()
+        await db.refresh(task)
+        if task.status == ImportTaskStatus.CANCELLED:
+            await MinerUClient().cancel_task(remote_task_id)
+            raise TaskCancelled()
+
+    async def on_ingested() -> None:
+        await db.refresh(task)
+        if task.status == ImportTaskStatus.CANCELLED:
+            raise TaskCancelled()
+        task.stage = "extracting"
+        task.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
+    result = await doc_processor.process_pdf(
+        file_path,
+        db=db,
+        task_id=proc_task_id,
+        mode=task.mode or "extract",
+        method=task.method or "ai",
+        subject_id=subject_id,
+        timeout=settings.MINERU_WORKER_TIMEOUT_SECONDS,
+        on_submitted=on_submitted,
+        on_ingested=on_ingested,
+    )
+
+    await db.refresh(task)
+    if task.status == ImportTaskStatus.CANCELLED:
+        raise TaskCancelled()
+
+    questions = extracted_to_v2_review(
+        result.get("questions", []), subject_id=subject_id
+    )
+    payload = {
+        "task_id": result.get("task_id") or proc_task_id,
+        "content": result.get("content", ""),
+        "questions": questions,
+        "paper": result.get("paper"),
+        "file_path": task.file_path,
+        "content_sha256": task.content_sha256,
+    }
+
+    result_dir = settings.UPLOAD_DIR / str(task.id)
+    result_path = result_dir / "extraction.json"
+    await asyncio.to_thread(result_dir.mkdir, parents=True, exist_ok=True)
+    await asyncio.to_thread(
+        result_path.write_text,
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    task.result_path = str(result_path)
+    task.result_summary = json.dumps(
+        {"count": len(questions), "proc_task_id": payload["task_id"]}
+    )
+    task.stage = "completed"
+    task.status = ImportTaskStatus.COMPLETED
+    logger.info(
+        "Smart PDF task %s completed. %d questions ready for review.",
+        task.id,
+        len(questions),
+    )
+
+
 async def process_task(db: AsyncSession, task: ImportTask):
     try:
         logger.info(f"Starting task {task.id} ({task.file_type}): {task.original_filename}")
-        
-        # Update status to PROCESSING
+
         task.status = ImportTaskStatus.PROCESSING
+        if task.source == SMART_IMPORT_SOURCE:
+            task.stage = "mineru"
         task.updated_at = datetime.now(timezone.utc)
         db.add(task)
         await db.commit()
         await db.refresh(task)
         logger.info(f"Task {task.id} status updated to PROCESSING")
-        
-        # Process file
+
         file_path = Path(task.file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Resolve subject up-front so knowledge-point retrieval can be subject-scoped.
-        subject_id = None
-        if task.user_id:
+        # Smart imports carry an explicit subject; batch imports keep the old
+        # behaviour of falling back to the user's last active subject.
+        subject_id = task.subject_id if task.source == SMART_IMPORT_SOURCE else None
+        if subject_id is None and task.user_id:
             user_stmt = select(User).where(User.id == task.user_id)
             user_result = await db.execute(user_stmt)
             user = user_result.scalar_one_or_none()
             if user:
                 subject_id = user.last_active_subject_id
+
+        if task.source == SMART_IMPORT_SOURCE:
+            if task.file_type != "pdf":
+                raise RuntimeError(f"Unsupported smart import type: {task.file_type}")
+            await _process_smart_pdf_task(
+                db, task, file_path=file_path, subject_id=subject_id
+            )
+            return
 
         result = None
         if task.file_type == 'docx':
@@ -73,7 +170,7 @@ async def process_task(db: AsyncSession, task: ImportTask):
             import uuid
             proc_task_id = str(uuid.uuid4())
             result = await doc_processor.process_markdown(content, db=db, filename=task.original_filename, task_id=proc_task_id, mode=task.mode or "extract", subject_id=subject_id)
-            
+
         if result:
             # Save questions via the shared importer (same path as /questions/batch-legacy).
             questions_data = result.get("questions", [])
@@ -106,11 +203,23 @@ async def process_task(db: AsyncSession, task: ImportTask):
             task.status = ImportTaskStatus.FAILED
             task.error_message = "No result from processor"
             logger.error(f"Task {task.id} failed: No result")
-            
+
+    except TaskCancelled:
+        logger.info("Task %s was cancelled; stopping smart import.", task.id)
+        await db.refresh(task)
+        if task.status != ImportTaskStatus.CANCELLED:
+            task.status = ImportTaskStatus.CANCELLED
+        task.stage = "cancelled"
     except Exception as e:
         logger.error(f"Error processing task {task.id}: {e}", exc_info=True)
+        await db.refresh(task)
+        if task.status == ImportTaskStatus.CANCELLED:
+            logger.info("Task %s was cancelled; ignoring processing error.", task.id)
+            return
         task.status = ImportTaskStatus.FAILED
         task.error_message = str(e)
+        if task.source == SMART_IMPORT_SOURCE:
+            task.stage = "failed"
 
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
             logger.critical("Quota exceeded (429), stopping worker...")
@@ -118,6 +227,7 @@ async def process_task(db: AsyncSession, task: ImportTask):
     finally:
         task.updated_at = datetime.now(timezone.utc)
         await db.commit()
+
 
 async def wait_for_schema() -> None:
     """Block until the database schema has been migrated.
@@ -172,7 +282,7 @@ async def worker():
                 # SKIP LOCKED query
                 stmt = select(ImportTask).where(
                     ImportTask.status == ImportTaskStatus.PENDING,
-                    ImportTask.source == "batch_upload"
+                    ImportTask.source.in_([BATCH_IMPORT_SOURCE, SMART_IMPORT_SOURCE]),
                 )\
                     .order_by(ImportTask.created_at)\
                     .limit(1)

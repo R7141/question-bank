@@ -13,7 +13,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import Awaitable, BinaryIO, Callable, Optional
 from urllib.parse import quote, unquote, urlsplit
 
 import pypandoc
@@ -294,10 +294,14 @@ class PdfIngestor:
         task_id: Optional[str] = None,
         filename: Optional[str] = None,
         timeout: Optional[int] = None,
+        on_submitted: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> CanonicalDoc:
         task_id = _ensure_task_id(task_id)
         result = await self.client.parse_pdf(
-            file_path, task_id=task_id, timeout=timeout
+            file_path,
+            task_id=task_id,
+            timeout=timeout,
+            on_submitted=on_submitted,
         )
 
         if result.zip_path is not None:

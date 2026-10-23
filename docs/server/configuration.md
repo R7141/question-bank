@@ -38,10 +38,10 @@ PDF 导入依赖 [MinerU](https://github.com/opendatalab/MinerU) 4.x 的 V1 API�
 | `MINERU_API_URL` | 空 | MinerU API 地址，如 `http://qb-mineru-standalone:8000`；不要带 `/v1` |
 | `MINERU_API_KEY` | 空 | MinerU 启动时配置的 API Key；为空则匿名访问 |
 | `MINERU_TIER` | `standard` | 解析档位：`flash` / `basic` / `standard` / `advanced` |
-| `MINERU_TIMEOUT_SECONDS` | `600` | 智能导入同步等待上限（秒） |
-| `MINERU_WORKER_TIMEOUT_SECONDS` | `1800` | 批量导入 Worker 等待上限（秒） |
+| `MINERU_TIMEOUT_SECONDS` | `600` | MinerU 客户端单次调用默认超时（秒） |
+| `MINERU_WORKER_TIMEOUT_SECONDS` | `1800` | Worker 后台 PDF 任务等待上限（秒），智能导入与批量导入共用 |
 
-CPU 部署的 `standard` 档位约 9–11 秒/页，内存峰值约 7 GB，建议 MinerU 保持单并发。部署步骤见 [Docker Compose 部署](/server/docker#mineru-pdf-转换服务)。
+PDF 智能导入是后台任务，上传接口立即返回，不受 Nginx 600 秒限制。CPU 部署的 `standard` 档位约 9–11 秒/页，扫描件可能超过 15 分钟；内存峰值约 7 GB，建议 MinerU 保持单并发。部署步骤见 [Docker Compose 部署](/server/docker#mineru-pdf-转换服务)。
 
 ## 运行时
 
