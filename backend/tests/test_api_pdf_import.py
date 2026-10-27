@@ -166,3 +166,43 @@ async def test_batch_import_accepts_pdf(client, db_session, tmp_path, monkeypatc
     ).scalar_one()
     assert task.file_type == "pdf"
     assert task.status.value == "pending"
+
+async def test_cancel_smart_pdf_task_cancels_mineru(
+    client, db_session, monkeypatch
+):
+    from app.api.v1.endpoints import import_tasks as import_tasks_endpoint
+
+    user, headers = await _auth_user(db_session)
+    task = ImportTask(
+        user_id=user.id,
+        description="PDF 智能导入 paper.pdf",
+        source=SMART_IMPORT_SOURCE,
+        file_path="/tmp/paper.pdf",
+        original_filename="paper.pdf",
+        file_type="pdf",
+        stage="mineru",
+        status=ImportTaskStatus.PROCESSING,
+        remote_task_id="job-cancel-1",
+    )
+    db_session.add(task)
+    await db_session.commit()
+    await db_session.refresh(task)
+
+    cancelled = []
+
+    async def fake_cancel(self, remote_task_id):
+        cancelled.append(remote_task_id)
+
+    monkeypatch.setattr(
+        import_tasks_endpoint.MinerUClient, "cancel_task", fake_cancel
+    )
+
+    response = await client.post(
+        f"/api/v1/imports/{task.id}/cancel", headers=headers
+    )
+
+    assert response.status_code == 200
+    await db_session.refresh(task)
+    assert task.status == ImportTaskStatus.CANCELLED
+    assert task.stage == "cancelled"
+    assert cancelled == ["job-cancel-1"]

@@ -70,6 +70,7 @@ const pastedImage = ref<string | null>(null)
 const isUploading = ref(false)
 const pdfTaskId = ref<number | null>(null)
 const pdfPollTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const isCancelling = ref(false)
 const isImporting = ref(false)
 const error = ref<string | null>(null)
 const importList = ref<ImportDraft[]>([])
@@ -205,14 +206,67 @@ const cancelPdfTaskQuietly = (taskId: number | null) => {
     void $api(`/imports/${taskId}/cancel`, { method: 'POST' }).catch(() => {})
 }
 
+const cancelPdfUpload = async () => {
+    const taskId = pdfTaskId.value
+    if (!taskId || isCancelling.value) return
+    if (typeof window !== 'undefined' && !window.confirm('确定取消本次 PDF 识别吗？')) return
+
+    isCancelling.value = true
+    clearPdfPoll()
+
+    try {
+        await $api(`/imports/${taskId}/cancel`, { method: 'POST' })
+        clearPdfTask()
+        isUploading.value = false
+        error.value = null
+        toast.info('已取消识别')
+    } catch (e: any) {
+        // 任务可能刚好完成或已经失败;查询一次,避免误报取消失败。
+        try {
+            const data = await $api<any>(`/imports/${taskId}`)
+            if (data.status === 'completed') {
+                const result = await $api<any>(`/imports/${taskId}/result`)
+                clearPdfTask()
+                isUploading.value = false
+                error.value = null
+                acceptExtraction(result)
+                toast.success('识别已完成，请审核题目')
+                return
+            }
+            if (data.status === 'cancelled') {
+                clearPdfTask()
+                isUploading.value = false
+                error.value = null
+                toast.info('已取消识别')
+                return
+            }
+            if (data.status === 'failed') {
+                clearPdfTask()
+                isUploading.value = false
+                error.value = data.error_message || '识别失败'
+                return
+            }
+            // 取消失败但任务仍在处理:恢复轮询。
+            pdfPollTimer.value = setTimeout(() => pollPdfTask(taskId), 3000)
+            toast.error('取消失败，任务继续处理中')
+        } catch {
+            error.value = e.data?.detail || e.message || '取消识别失败'
+        }
+    } finally {
+        isCancelling.value = false
+    }
+}
+
 const pollPdfTask = async (taskId: number) => {
     clearPdfPoll()
     try {
         const data = await $api<any>(`/imports/${taskId}`)
+        if (isCancelling.value || pdfTaskId.value !== taskId) return
         if (data.status === 'completed') {
             const result = await $api<any>(`/imports/${taskId}/result`)
             clearPdfTask()
             isUploading.value = false
+            error.value = null
             acceptExtraction(result)
             toast.success('PDF 转换完成，请审核题目')
             return
@@ -230,6 +284,7 @@ const pollPdfTask = async (taskId: number) => {
         }
         pdfPollTimer.value = setTimeout(() => pollPdfTask(taskId), 3000)
     } catch (e: any) {
+        if (isCancelling.value || pdfTaskId.value !== taskId) return
         cancelPdfTaskQuietly(taskId)
         error.value = e.data?.detail || e.message || '查询 PDF 导入状态失败'
         clearPdfTask()
@@ -633,6 +688,7 @@ const getEditingItem = () => {
 
 const reset = () => {
     clearPdfTask()
+    isCancelling.value = false
     isUploading.value = false
     file.value = null
     markdownContent.value = ''
@@ -928,6 +984,16 @@ const reset = () => {
                             <Sparkles v-else-if="parseMethod === 'ai'" class="mr-2 h-6 w-6" />
                             <FileCode v-else class="mr-2 h-6 w-6" />
                             {{ isUploading ? '正在拼命识别中...' : (parseMethod === 'ai' ? '开始智能识别' : '开始模板解析') }}
+                        </Button>
+                        <Button
+                            v-if="isUploading && pdfTaskId"
+                            variant="outline"
+                            class="w-full mt-2"
+                            :disabled="isCancelling"
+                            @click="cancelPdfUpload"
+                        >
+                            <Trash2 class="h-4 w-4 mr-2" />
+                            {{ isCancelling ? '正在取消...' : '取消识别' }}
                         </Button>
                         <p v-if="(!file && !pastedImage && !markdownContent.trim())" class="text-center text-sm text-destructive mt-3">
                             请在上方提供文件或纯文本内容

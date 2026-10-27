@@ -32,7 +32,8 @@ PDF → MinerU 4.x /v1/tasks → Markdown + images → AI 抽取 / 标签解析 
 - 批量导入：任务进入 Worker 队列，与智能导入共用同一 Worker；失败可在导入历史中重试。
 - 默认解析档位 `standard`；CPU 部署约 9–11 秒/页，扫描件或复杂排版可能显著更慢，后台任务不会受浏览器/Nginx 超时影响。
 - MinerU 产出的图片会保存到 `/static/media/{task_id}/images/...`，并参与后续图片遮罩/还原。
-- 前端请求或后台处理发生错误时，会自动取消对应的 MinerU 任务，避免遗留无效解析；页面不提供额外取消按钮。
+- PDF 识别过程中可点击主按钮下方的“取消识别”；确认后会停止轮询并取消对应的 MinerU 任务，已选文件保留，方便重新开始。
+- 前端请求或后台处理发生错误时，也会自动取消对应的 MinerU 任务，避免遗留无效解析。
 - 服务端配置见 [配置参考](/server/configuration#mineru-pdf-转换)；部署方式见 [Docker Compose 部署](/server/docker#mineru-pdf-转换服务)。
 
 ## 标签精准解析
