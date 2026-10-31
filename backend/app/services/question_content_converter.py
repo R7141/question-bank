@@ -59,9 +59,6 @@ _PX_PER_UNIT = {
     "pt": 96.0 / 72.0,
 }
 _MAX_IMAGE_DIMENSION_PX = 20_000.0
-# 缺失/无法解析宽度时的兜底显示宽度;不兜底 height,避免在未知宽高比时伪造出拉伸变形。
-# TODO: 目前是写死常量,未来若要支持后台可调,可挪到 system_settings 并在此处读取。
-_DEFAULT_IMAGE_WIDTH_PX = 300.0
 
 
 # --------------------------------------------------------------------------- #
@@ -308,11 +305,12 @@ def _image(node: SyntaxTreeNode) -> Node:
     title = attrs.get("title")
     if title:
         image_attrs["title"] = str(title)
-    # width 缺失或格式非法都兜底成默认宽度;height 不兜底,缺失/非法都不写入(避免伪造宽高比)。
+    # width 缺失或格式非法都不写入,渲染侧按原始尺寸显示并用 CSS max-width 约束容器宽度。
     raw_width = attrs.get("width")
-    image_attrs["width"] = (
-        _image_dimension_to_px(raw_width) if raw_width is not None else None
-    ) or _DEFAULT_IMAGE_WIDTH_PX
+    if raw_width is not None:
+        width = _image_dimension_to_px(raw_width)
+        if width is not None:
+            image_attrs["width"] = width
     raw_height = attrs.get("height")
     if raw_height is not None:
         height = _image_dimension_to_px(raw_height)

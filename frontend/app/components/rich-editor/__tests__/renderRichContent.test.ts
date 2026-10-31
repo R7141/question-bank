@@ -44,6 +44,23 @@ describe('renderRichContentToHTML', () => {
         expect(html).toContain('katex')
     })
 
+    it('无 width 的图片不渲染 width 属性', () => {
+        const doc: RichDoc = {
+            type: 'doc',
+            content: [
+                {
+                    type: 'paragraph',
+                    content: [
+                        { type: 'image', attrs: { src: '/static/media/x.jpg', alt: 'x' } },
+                    ],
+                },
+            ],
+        }
+        const html = renderRichContentToHTML(doc)
+        expect(html).toContain('<img')
+        expect(html).not.toContain('width=')
+    })
+
     it('空内容返回空串', () => {
         expect(renderRichContentToHTML(null)).toBe('')
         expect(renderRichContentToHTML(emptyParagraphDoc)).toBe('')
