@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import KnowledgePointImportDialog from '@/components/manager/KnowledgePointImportDialog.vue'
+import KnowledgePointRelationsSheet from '@/components/manager/KnowledgePointRelationsSheet.vue'
 import { toast } from 'vue-sonner'
 
 const { $api } = useNuxtApp()
@@ -224,6 +225,17 @@ const handleMove = async (draggedId: number, targetId: number) => {
   }
 }
 
+// --- Knowledge relations ---
+const showRelationsSheet = ref(false)
+const relationsPoint = ref<KnowledgePoint | null>(null)
+
+const handleRelations = (id: number) => {
+  const point = knowledgePoints.value?.find(kp => kp.id === id) ?? null
+  if (!point || point.is_category) return
+  relationsPoint.value = point
+  showRelationsSheet.value = true
+}
+
 // Auto-generate slug
 watch(newRootName, (val) => {
   if (!isCreatingRoot.value) return
@@ -339,7 +351,8 @@ onMounted(fetchVectorStatus)
             </div>
 
             <ManagerKnowledgePointTreeItem v-for="node in knowledgePointTree" :key="node.id" :knowledge-point="node" :editable="canManage"
-              @update="handleUpdate" @delete="handleDelete" @create="handleCreateChild" @move="handleMove" />
+              @update="handleUpdate" @delete="handleDelete" @create="handleCreateChild" @move="handleMove"
+              @relations="handleRelations" />
           </div>
         </div>
       </Tabs>
@@ -350,6 +363,12 @@ onMounted(fetchVectorStatus)
       :subject-id="selectedSubjectId ? Number(selectedSubjectId) : null"
       :subject-name="selectedSubjectName"
       @imported="handleImported"
+    />
+
+    <KnowledgePointRelationsSheet
+      v-model:open="showRelationsSheet"
+      :point="relationsPoint"
+      :knowledge-points="knowledgePoints || []"
     />
   </div>
 </template>

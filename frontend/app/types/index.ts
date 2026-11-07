@@ -109,6 +109,49 @@ export interface KnowledgePoint {
   slug: string
   subject_id: number
   parent_id?: number
+  description?: string | null
+  node_type?: string | null
+  grade?: string | null
+  chapter?: string | null
+  learning_requirement?: string | null
+  attributes?: Record<string, unknown> | null
+  source?: string | null
+  is_category?: boolean
+}
+
+export interface KnowledgeRelationType {
+  id: number
+  code: string
+  name: string
+  category?: string | null
+  is_directed: boolean
+  description?: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeRelation {
+  id: number
+  subject_id: number
+  source_id: number
+  target_id: number
+  relation_type_id: number
+  description?: string | null
+  weight?: number | null
+  source?: string | null
+  status: string
+  confidence?: number | null
+  attributes?: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeRelationDetail extends KnowledgeRelation {
+  relation_type?: KnowledgeRelationType | null
+  source_point?: KnowledgePoint | null
+  target_point?: KnowledgePoint | null
 }
 
 export interface VectorStatus {

@@ -151,7 +151,9 @@ const structuredTagWarning = computed(() => {
 // --- Data Fetching ---
 const { $api } = useNuxtApp()
 const { data: subjects } = useAPI<Subject[]>('/subjects')
-const { data: knowledgePoints } = useAPI<KnowledgePoint[]>('/knowledge-points', { query: { limit: -1 } })
+const { data: knowledgePoints } = useAPI<KnowledgePoint[]>('/knowledge-points', {
+  query: { limit: -1, include_categories: false }
+})
 
 // Default the import subject to the global subject context (still overridable below).
 const { currentSubjectId } = useSubjectContext()
@@ -310,7 +312,9 @@ onUnmounted(clearPdfPoll)
 const filteredKnowledgePoints = computed(() => {
     if (!knowledgePoints.value) return []
     if (!globalSettings.value.subject_id) return []
-    return knowledgePoints.value.filter(c => c.subject_id === globalSettings.value.subject_id)
+    return knowledgePoints.value.filter(
+      c => c.subject_id === globalSettings.value.subject_id && !c.is_category
+    )
 })
 
 // --- Handlers ---
