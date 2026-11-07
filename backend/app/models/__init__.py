@@ -3,6 +3,8 @@ from .user import User
 from .subject import Subject
 from .subject_member import SubjectMember
 from .knowledge_point import KnowledgePoint
+from .knowledge_relation import KnowledgeRelation, KnowledgeRelationType
+from .knowledge_external_ref import KnowledgeExternalRef
 from .tag import Tag
 from .tag_category import TagCategory
 from .question import Question

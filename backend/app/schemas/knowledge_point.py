@@ -1,11 +1,18 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from datetime import datetime
 
 class KnowledgePointBase(BaseModel):
     name: str
     slug: str
     parent_id: Optional[int] = None
+    description: Optional[str] = None
+    node_type: Optional[str] = None
+    grade: Optional[str] = None
+    chapter: Optional[str] = None
+    learning_requirement: Optional[str] = None
+    attributes: Optional[Dict[str, Any]] = None
+    source: Optional[str] = None
 
 class KnowledgePointCreate(KnowledgePointBase):
     subject_id: int
@@ -20,6 +27,7 @@ class KnowledgePoint(KnowledgePointBase):
     subject_id: int
     created_at: datetime
     updated_at: datetime
+    is_category: bool = False
 
     class Config:
         from_attributes = True
