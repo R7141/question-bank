@@ -154,6 +154,44 @@ export interface KnowledgeRelationDetail extends KnowledgeRelation {
   target_point?: KnowledgePoint | null
 }
 
+export interface ImportAction {
+  external_id: string
+  name: string
+  node_type: string
+  action: 'create' | 'link' | 'update' | 'skip' | 'conflict'
+  reason?: string | null
+}
+
+export interface KnowledgeImportPreview {
+  source: string
+  subject_id: number
+  checksum: string
+  total_nodes: number
+  total_relations: number
+  to_create: number
+  to_link: number
+  to_update: number
+  skipped: number
+  conflicts: number
+  relations_to_create: number
+  relations_skipped: number
+  actions: ImportAction[]
+  errors: string[]
+}
+
+export interface KnowledgeImportResult {
+  source: string
+  subject_id: number
+  created_nodes: number
+  linked_nodes: number
+  updated_nodes: number
+  created_relations: number
+  skipped_relations: number
+  vector_synced: boolean
+  duration: number
+  errors: string[]
+}
+
 export interface VectorStatus {
   embedding_configured: boolean
   db_count: number

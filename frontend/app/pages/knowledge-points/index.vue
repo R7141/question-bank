@@ -2,12 +2,13 @@
 import PageHeader from '~/components/PageHeader.vue'
 import type { KnowledgePoint, Subject, VectorStatus, ReindexResult } from '~/types'
 import { useAPI } from '~/composables/useAPI'
-import { Loader2, Plus, Save, X, Folder, Upload, Download, RefreshCw, Database } from '@lucide/vue'
+import { Loader2, Plus, Save, X, Folder, Upload, Download, RefreshCw, Database, Network } from '@lucide/vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import KnowledgePointImportDialog from '@/components/manager/KnowledgePointImportDialog.vue'
+import KnowledgeGraphImportDialog from '@/components/manager/KnowledgeGraphImportDialog.vue'
 import KnowledgePointRelationsSheet from '@/components/manager/KnowledgePointRelationsSheet.vue'
 import { toast } from 'vue-sonner'
 
@@ -244,6 +245,7 @@ watch(newRootName, (val) => {
 
 // --- Batch import & vector sync ---
 const showImportDialog = ref(false)
+const showGraphImportDialog = ref(false)
 const vectorStatus = ref<VectorStatus | null>(null)
 const isReindexing = ref(false)
 
@@ -257,6 +259,11 @@ const fetchVectorStatus = async () => {
 }
 
 const handleImported = async () => {
+  await refresh()
+  await fetchVectorStatus()
+}
+
+const handleGraphImported = async () => {
   await refresh()
   await fetchVectorStatus()
 }
@@ -294,6 +301,9 @@ onMounted(fetchVectorStatus)
               <template v-if="isSuperuser">
                 <Button variant="outline" size="sm" @click="showImportDialog = true">
                   <Upload class="w-4 h-4 mr-2" />批量导入
+                </Button>
+                <Button variant="outline" size="sm" @click="showGraphImportDialog = true">
+                  <Network class="w-4 h-4 mr-2" />外部图谱导入
                 </Button>
               </template>
               <Button v-if="canManage && !isCreatingRoot" size="sm" @click="isCreatingRoot = true">
@@ -363,6 +373,13 @@ onMounted(fetchVectorStatus)
       :subject-id="selectedSubjectId ? Number(selectedSubjectId) : null"
       :subject-name="selectedSubjectName"
       @imported="handleImported"
+    />
+
+    <KnowledgeGraphImportDialog
+      v-model:open="showGraphImportDialog"
+      :subject-id="selectedSubjectId ? Number(selectedSubjectId) : null"
+      :subject-name="selectedSubjectName"
+      @imported="handleGraphImported"
     />
 
     <KnowledgePointRelationsSheet
