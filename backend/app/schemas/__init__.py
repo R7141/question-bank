@@ -12,6 +12,7 @@ from .knowledge_graph import (
     KnowledgeRelation, KnowledgeRelationCreate, KnowledgeRelationUpdate,
     KnowledgeRelationDetail,
     KnowledgeExternalRef, KnowledgeExternalRefCreate,
+    ImportAction, ImportPreview, ImportResult,
 )
 from .tag import Tag, TagCreate, TagUpdate, TagPage, TagImportRowError, TagImportResult
 from .tag_category import TagCategory, TagCategoryCreate, TagCategoryUpdate
