@@ -121,4 +121,7 @@ async def delete_knowledge_relation_type(
     relation_type = await relation_type_crud.get(db, id)
     if not relation_type:
         raise HTTPException(status_code=404, detail="关系类型不存在")
-    return await relation_type_crud.remove(db, id=id, user_id=current_user.id)
+    try:
+        return await relation_type_crud.remove(db, id=id, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None

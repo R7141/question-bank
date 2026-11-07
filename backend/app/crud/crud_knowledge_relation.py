@@ -81,6 +81,13 @@ class CRUDKnowledgeRelationType(
     ) -> KnowledgeRelationType:
         obj = await self.get(db, id)
         if obj:
+            used = await db.execute(
+                select(KnowledgeRelation.id)
+                .where(KnowledgeRelation.relation_type_id == id)
+                .limit(1)
+            )
+            if used.scalars().first() is not None:
+                raise ValueError("该关系类型仍被知识关系使用，不能删除")
             await db.delete(obj)
             await db.commit()
             await log_activity(db, user_id, "delete", "knowledge_relation_type", id)

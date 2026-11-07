@@ -249,3 +249,17 @@ async def test_relation_type_update_and_remove(db_session):
 
     await relation_type_crud.remove(db_session, id=relation_type.id)
     assert await relation_type_crud.get(db_session, relation_type.id) is None
+
+
+async def test_relation_type_cannot_be_deleted_while_in_use(db_session):
+    _, _, _, a, b, _ = await _seed_points(db_session)
+    relation_type = await _prerequisite_type(db_session)
+    await knowledge_relation.create(
+        db_session,
+        obj_in=KnowledgeRelationCreate(
+            source_id=a.id, target_id=b.id, relation_type_id=relation_type.id
+        ),
+    )
+
+    with pytest.raises(ValueError, match="仍被"):
+        await relation_type_crud.remove(db_session, id=relation_type.id)

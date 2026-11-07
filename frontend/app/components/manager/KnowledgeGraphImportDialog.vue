@@ -90,6 +90,12 @@ watch(
   }
 )
 
+// 预览结果与 update_existing 绑定；切换选项后必须重新预览。
+watch(updateExisting, () => {
+  preview.value = null
+  result.value = null
+})
+
 const close = () => emit('update:open', false)
 
 const triggerFileInput = () => fileInput.value?.click()
@@ -318,7 +324,7 @@ const runApply = async () => {
         <Button variant="outline" @click="close">关闭</Button>
         <Button
           variant="outline"
-          :disabled="!selectedFile || loadingPreview || applying"
+          :disabled="!selectedFile || !subjectId || loadingPreview || applying"
           @click="runPreview"
         >
           <Loader2 v-if="loadingPreview" class="mr-2 h-4 w-4 animate-spin" />
