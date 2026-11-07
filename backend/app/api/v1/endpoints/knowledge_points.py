@@ -120,7 +120,12 @@ async def get_vector_status(
         all_kps = await crud.knowledge_point.get_multi(db, limit=None)
         db_count = _count_indexable(all_kps)
 
-    vector_count = VectorStore.count() if embedding_configured else 0
+    if not embedding_configured:
+        vector_count = 0
+    elif subject_id:
+        vector_count = VectorStore.count_by_subject(subject_id)
+    else:
+        vector_count = VectorStore.count()
 
     if not embedding_configured:
         needs_reindex = False

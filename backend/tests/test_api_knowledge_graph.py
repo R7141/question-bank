@@ -249,3 +249,25 @@ async def test_vector_status_excludes_category_nodes(client, db_session):
     assert resp.status_code == 200, resp.text
     # 2 个真实知识点；domain/chapter 不计入向量索引。
     assert resp.json()["db_count"] == 2
+
+
+async def test_vector_status_uses_subject_scoped_vector_count(client, db_session, monkeypatch):
+    from app.core.vector_store import VectorStore
+
+    ctx = await _ctx(db_session)
+    monkeypatch.setattr(VectorStore, "is_available", classmethod(lambda cls: True))
+    monkeypatch.setattr(VectorStore, "count", classmethod(lambda cls, name="knowledge_points": 99))
+    monkeypatch.setattr(
+        VectorStore, "count_by_subject",
+        classmethod(lambda cls, subject_id, name="knowledge_points": 2),
+    )
+
+    resp = await client.get(
+        f"{API}/knowledge-points/vector-status?subject_id={ctx['math'].id}",
+        headers=_auth(ctx["admin"]),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["db_count"] == 2
+    assert body["vector_count"] == 2
+    assert body["needs_reindex"] is False
