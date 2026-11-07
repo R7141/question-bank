@@ -1,7 +1,7 @@
 from typing import List, Optional, Union, Dict, Any
 from slugify import slugify
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, text
+from sqlalchemy import select, update, delete, text, or_
 from app.crud.base import CRUDBase
 from app.models.knowledge_point import CATEGORY_NODE_TYPES, KnowledgePoint
 from app.schemas.knowledge_point import KnowledgePointCreate, KnowledgePointUpdate
@@ -119,8 +119,56 @@ class CRUDKnowledgePoint(CRUDBase[KnowledgePoint, KnowledgePointCreate, Knowledg
             
         return obj
 
-    async def get_by_subject(self, db: AsyncSession, subject_id: int, skip: int = 0, limit: Optional[int] = 100) -> List[KnowledgePoint]:
-        query = select(self.model).filter(self.model.subject_id == subject_id).offset(skip)
+    def _apply_node_filters(
+        self,
+        query,
+        *,
+        include_categories: bool = True,
+        node_type: Optional[str] = None,
+    ):
+        if not include_categories:
+            query = query.filter(
+                (self.model.node_type.is_(None))
+                | (self.model.node_type.notin_(CATEGORY_NODE_TYPES))
+            )
+        if node_type:
+            query = query.filter(self.model.node_type == node_type)
+        return query
+
+    async def get_multi(
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: Optional[int] = 100,
+        *,
+        include_categories: bool = True,
+        node_type: Optional[str] = None,
+    ) -> List[KnowledgePoint]:
+        query = self._apply_node_filters(
+            select(self.model).offset(skip),
+            include_categories=include_categories,
+            node_type=node_type,
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    async def get_by_subject(
+        self,
+        db: AsyncSession,
+        subject_id: int,
+        skip: int = 0,
+        limit: Optional[int] = 100,
+        *,
+        include_categories: bool = True,
+        node_type: Optional[str] = None,
+    ) -> List[KnowledgePoint]:
+        query = self._apply_node_filters(
+            select(self.model).filter(self.model.subject_id == subject_id).offset(skip),
+            include_categories=include_categories,
+            node_type=node_type,
+        )
         if limit is not None and limit != -1:
             query = query.limit(limit)
         result = await db.execute(query)

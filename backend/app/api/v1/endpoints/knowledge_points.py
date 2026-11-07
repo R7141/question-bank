@@ -7,11 +7,17 @@ from app import crud, schemas, models
 from app.api import deps
 from app.core.permissions import Permission
 from app.core.vector_store import VectorStore
+from app.models.knowledge_point import CATEGORY_NODE_TYPES
 from app.services import kp_import_service
 
 router = APIRouter()
 
 MAX_IMPORT_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+def _count_indexable(knowledge_points: List[models.KnowledgePoint]) -> int:
+    """向量索引只统计真实知识点，排除 domain/chapter 分类节点。"""
+    return sum(1 for kp in knowledge_points if kp.node_type not in CATEGORY_NODE_TYPES)
 
 
 @router.get("", response_model=List[schemas.KnowledgePoint])
@@ -20,20 +26,31 @@ async def read_knowledge_points(
     skip: int = 0,
     limit: int = 100,
     subject_id: Optional[int] = None,
+    include_categories: bool = True,
+    node_type: Optional[str] = None,
     current_user: models.User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Retrieve knowledge points.
     Set limit to -1 to retrieve all knowledge points.
+
+    include_categories 控制是否返回 domain/chapter 分类节点；默认 True，
+    让现有树形选择器能保留层级。只需要真实知识点时传 false。
     """
     if limit == -1:
         limit = None
 
     if subject_id:
         deps.require(current_user, Permission.VIEW_QUESTION, subject_id=subject_id)
-        knowledge_points = await crud.knowledge_point.get_by_subject(db, subject_id=subject_id, skip=skip, limit=limit)
+        knowledge_points = await crud.knowledge_point.get_by_subject(
+            db, subject_id=subject_id, skip=skip, limit=limit,
+            include_categories=include_categories, node_type=node_type,
+        )
     else:
-        knowledge_points = await crud.knowledge_point.get_multi(db, skip=skip, limit=limit)
+        knowledge_points = await crud.knowledge_point.get_multi(
+            db, skip=skip, limit=limit,
+            include_categories=include_categories, node_type=node_type,
+        )
     return knowledge_points
 
 
@@ -50,11 +67,13 @@ async def get_embedding_status(
     chroma_reachable = VectorStore.is_reachable()
 
     if subject_id is not None:
-        kps = await crud.knowledge_point.get_by_subject(db, subject_id=subject_id, limit=None)
+        kps = await crud.knowledge_point.get_indexable_by_subject(
+            db, subject_id=subject_id, limit=None
+        )
         kp_total = len(kps)
     else:
         all_kps = await crud.knowledge_point.get_multi(db, limit=None)
-        kp_total = len(all_kps)
+        kp_total = _count_indexable(all_kps)
 
     # Empty subject has nothing to vectorize; treat as "vectorized".
     kp_vectorized = True
@@ -83,11 +102,13 @@ async def get_vector_status(
     embedding_configured = VectorStore.is_available()
 
     if subject_id:
-        kps = await crud.knowledge_point.get_by_subject(db, subject_id=subject_id, limit=None)
+        kps = await crud.knowledge_point.get_indexable_by_subject(
+            db, subject_id=subject_id, limit=None
+        )
         db_count = len(kps)
     else:
         all_kps = await crud.knowledge_point.get_multi(db, limit=None)
-        db_count = len(all_kps)
+        db_count = _count_indexable(all_kps)
 
     vector_count = VectorStore.count() if embedding_configured else 0
 
@@ -240,6 +261,35 @@ async def read_knowledge_point(
         raise HTTPException(status_code=404, detail="Knowledge point not found")
     deps.require(current_user, Permission.VIEW_QUESTION, subject_id=knowledge_point.subject_id)
     return knowledge_point
+
+
+@router.get("/{id}/relations", response_model=List[schemas.KnowledgeRelationDetail])
+async def read_knowledge_point_relations(
+    *,
+    db: deps.SessionDep,
+    id: int,
+    direction: str = "both",
+    relation_type_id: Optional[int] = None,
+    limit: int = 100,
+    current_user: models.User = Depends(deps.get_current_active_user),
+) -> Any:
+    """查看某个知识点的出边 / 入边 / 双向关系。"""
+    knowledge_point = await crud.knowledge_point.get(db=db, id=id)
+    if not knowledge_point:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+    deps.require(current_user, Permission.VIEW_QUESTION, subject_id=knowledge_point.subject_id)
+
+    if direction not in ("in", "out", "both"):
+        raise HTTPException(status_code=400, detail="direction 只能是 in / out / both")
+
+    return await crud.knowledge_relation.get_for_point(
+        db,
+        point_id=id,
+        direction=direction,
+        relation_type_id=relation_type_id,
+        limit=limit,
+    )
+
 
 @router.delete("/{id}", response_model=schemas.KnowledgePoint)
 async def delete_knowledge_point(
