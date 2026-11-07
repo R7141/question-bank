@@ -462,11 +462,16 @@ class GeminiProvider(AIProvider):
         for item in items:
             prompt += f"题目ID: {item['id']}\n"
             prompt += f"题目内容: {item['content'][:200]}...\n"
-            prompt += f"候选知识点: {json.dumps(item['candidates'], ensure_ascii=False)}\n\n"
+            prompt += f"候选知识点: {json.dumps(item['candidates'], ensure_ascii=False)}\n"
+            context = item.get("context")
+            if context:
+                prompt += f"知识图谱上下文（仅作判断参考，不能作为候选返回）:\n{context}\n"
+            prompt += "\n"
             
         prompt += """
 请返回一个 JSON 列表，每个元素包含 "id" 和 "points" 字段。
 注意：
+只能从“候选知识点”中选择，不能返回“知识图谱上下文”里的其他知识点。
 如果候选知识点中存在层级关系（例如 "A > B" 和 "A > B > C"），请优先选择更具体的子级知识点（"A > B > C"），并排除父级知识点，除非题目内容仅涉及父级概念。
 """
         try:
@@ -832,11 +837,16 @@ class OpenAIProvider(AIProvider):
             for item in items:
                 prompt += f"题目ID: {item['id']}\n"
                 prompt += f"题目内容: {item['content'][:200]}...\n"
-                prompt += f"候选知识点: {json.dumps(item['candidates'], ensure_ascii=False)}\n\n"
+                prompt += f"候选知识点: {json.dumps(item['candidates'], ensure_ascii=False)}\n"
+            context = item.get("context")
+            if context:
+                prompt += f"知识图谱上下文（仅作判断参考，不能作为候选返回）:\n{context}\n"
+            prompt += "\n"
 
             prompt += """
 请返回一个 JSON 对象，键为题目ID（字符串），值为该题目最相关的知识点列表。
 注意：
+只能从“候选知识点”中选择，不能返回“知识图谱上下文”里的其他知识点。
 如果候选知识点中存在层级关系（例如 "A > B" 和 "A > B > C"），请优先选择更具体的子级知识点（"A > B > C"），并排除父级知识点，除非题目内容仅涉及父级概念。
 
 格式示例：
