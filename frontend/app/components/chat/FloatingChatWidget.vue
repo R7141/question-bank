@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
+import { MoveDiagonal } from '@lucide/vue'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import PromptManager from '@/components/PromptManager.vue'
 import ChatWidgetHeader from '@/components/chat/ChatWidgetHeader.vue'
@@ -8,14 +9,30 @@ import ChatMessageList from '@/components/chat/ChatMessageList.vue'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
 import ChatSelectionBar from '@/components/chat/ChatSelectionBar.vue'
 import { useGlobalChat } from '@/composables/useGlobalChat'
+import {
+  CHAT_MARGIN,
+  clampGeometry,
+  maximizeGeometry,
+  resizeGeometry,
+  type ResizeDirection,
+} from '@/lib/chatWidgetGeometry'
 
 const chat = useGlobalChat()
 const isMobile = useMediaQuery('(max-width: 767px)')
 
-const MIN_W = 320
-const MIN_H = 420
-const MARGIN = 24
+const MARGIN = CHAT_MARGIN
 const MINIMIZED_H = 44 // header-only height
+
+const resizeHandles: { dir: ResizeDirection; class: string }[] = [
+  { dir: 'n', class: 'left-2 right-2 top-0 h-1.5 cursor-ns-resize' },
+  { dir: 's', class: 'left-2 right-2 bottom-0 h-1.5 cursor-ns-resize' },
+  { dir: 'w', class: 'top-2 bottom-2 left-0 w-1.5 cursor-ew-resize' },
+  { dir: 'e', class: 'top-2 bottom-2 right-0 w-1.5 cursor-ew-resize' },
+  { dir: 'nw', class: 'top-0 left-0 h-3 w-3 cursor-nwse-resize' },
+  { dir: 'ne', class: 'top-0 right-0 h-3 w-3 cursor-nesw-resize' },
+  { dir: 'sw', class: 'bottom-0 left-0 h-3 w-3 cursor-nesw-resize' },
+  { dir: 'se', class: 'bottom-0 right-0 h-6 w-6 cursor-nwse-resize' },
+]
 
 // Resolve the effective top-left position. When unset (-1) or off-screen,
 // dock to the bottom-right of the viewport.
@@ -50,10 +67,13 @@ let dragStart = { px: 0, py: 0, x: 0, y: 0 }
 const onDragStart = (e: PointerEvent) => {
   if (isMobile.value) return
   const target = e.target as HTMLElement
-  // Ignore drags that start on interactive controls inside the header.
-  if (target.closest('button, input')) return
+  // Ignore drags that start on interactive controls or resize handles.
+  if (target.closest('button, input, textarea, a, [contenteditable], [data-chat-resize-handle]')) {
+    return
+  }
   const handle = target.closest('[data-chat-drag-handle]')
   if (!handle) return
+  if (chat.isMaximized.value) chat.isMaximized.value = false
   dragStart = { px: e.clientX, py: e.clientY, x: resolvedPos.value.x, y: resolvedPos.value.y }
   window.addEventListener('pointermove', onDragMove)
   window.addEventListener('pointerup', onDragEnd)
@@ -73,27 +93,102 @@ const onDragEnd = () => {
   window.removeEventListener('pointerup', onDragEnd)
 }
 
-// --- Resize (bottom-right handle) ---
-let resizeStart = { px: 0, py: 0, w: 0, h: 0 }
-const onResizeStart = (e: PointerEvent) => {
-  if (isMobile.value) return
+// --- Resize (8 directions) ---
+let resizeStart = {
+  px: 0,
+  py: 0,
+  geometry: { x: 0, y: 0, width: 0, height: 0 },
+}
+let resizeDirection: ResizeDirection = 'se'
+let resizeTarget: HTMLElement | null = null
+let resizePointerId: number | null = null
+
+const onResizeStart = (e: PointerEvent, direction: ResizeDirection) => {
+  if (isMobile.value || chat.isMinimized.value) return
   e.stopPropagation()
-  resizeStart = { px: e.clientX, py: e.clientY, w: chat.size.value.width, h: chat.size.value.height }
+  e.preventDefault()
+  if (chat.isMaximized.value) chat.isMaximized.value = false
+  resizeDirection = direction
+  resizeTarget = e.currentTarget as HTMLElement
+  resizePointerId = e.pointerId
+  resizeTarget.setPointerCapture?.(e.pointerId)
+  resizeStart = {
+    px: e.clientX,
+    py: e.clientY,
+    geometry: {
+      x: resolvedPos.value.x,
+      y: resolvedPos.value.y,
+      width: chat.size.value.width,
+      height: chat.size.value.height,
+    },
+  }
+  document.body.style.userSelect = 'none'
   window.addEventListener('pointermove', onResizeMove)
   window.addEventListener('pointerup', onResizeEnd)
 }
 const onResizeMove = (e: PointerEvent) => {
-  const maxW = window.innerWidth * 0.9
-  const maxH = window.innerHeight * 0.9
-  chat.size.value = {
-    width: Math.max(MIN_W, Math.min(resizeStart.w + (e.clientX - resizeStart.px), maxW)),
-    height: Math.max(MIN_H, Math.min(resizeStart.h + (e.clientY - resizeStart.py), maxH)),
-  }
+  const next = resizeGeometry(
+    resizeStart.geometry,
+    resizeDirection,
+    e.clientX - resizeStart.px,
+    e.clientY - resizeStart.py,
+    { width: window.innerWidth, height: window.innerHeight }
+  )
+  chat.size.value = { width: next.width, height: next.height }
+  chat.position.value = { x: next.x, y: next.y }
 }
 const onResizeEnd = () => {
   window.removeEventListener('pointermove', onResizeMove)
   window.removeEventListener('pointerup', onResizeEnd)
+  if (resizeTarget && resizePointerId !== null) {
+    try {
+      resizeTarget.releasePointerCapture(resizePointerId)
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+  }
+  resizeTarget = null
+  resizePointerId = null
+  document.body.style.userSelect = ''
 }
+
+// --- Viewport resize ---
+const onWindowResize = () => {
+  if (typeof window === 'undefined' || isMobile.value) return
+  if (chat.isMaximized.value) {
+    const geometry = maximizeGeometry({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })
+    chat.size.value = { width: geometry.width, height: geometry.height }
+    chat.position.value = { x: geometry.x, y: geometry.y }
+    return
+  }
+  if (chat.position.value.x < 0 || chat.position.value.y < 0) return
+
+  if (chat.isMinimized.value) {
+    chat.position.value = {
+      x: Math.max(0, Math.min(chat.position.value.x, window.innerWidth - chat.size.value.width)),
+      y: Math.max(0, Math.min(chat.position.value.y, window.innerHeight - MINIMIZED_H)),
+    }
+    return
+  }
+
+  const geometry = clampGeometry(
+    {
+      x: chat.position.value.x,
+      y: chat.position.value.y,
+      width: chat.size.value.width,
+      height: chat.size.value.height,
+    },
+    { width: window.innerWidth, height: window.innerHeight }
+  )
+  chat.size.value = { width: geometry.width, height: geometry.height }
+  chat.position.value = { x: geometry.x, y: geometry.y }
+}
+
+onMounted(() => window.addEventListener('resize', onWindowResize))
+onUnmounted(() => window.removeEventListener('resize', onWindowResize))
 
 const onKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
@@ -127,16 +222,20 @@ const onKeydown = (e: KeyboardEvent) => {
         </template>
       </div>
 
-      <!-- Resize handle (desktop only) -->
-      <div
-        v-if="!isMobile && !chat.isMinimized.value"
-        class="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
-        @pointerdown="onResizeStart"
-      >
-        <svg viewBox="0 0 10 10" class="h-full w-full text-muted-foreground/50">
-          <path d="M9 1 L1 9 M9 5 L5 9" stroke="currentColor" stroke-width="1" fill="none" />
-        </svg>
-      </div>
+      <!-- Resize handles (desktop only) -->
+      <template v-if="!isMobile && !chat.isMinimized.value">
+        <div
+          v-for="handle in resizeHandles"
+          :key="handle.dir"
+          data-chat-resize-handle
+          class="absolute z-20 touch-none"
+          :class="handle.class"
+          @pointerdown="onResizeStart($event, handle.dir)"
+        />
+        <div class="pointer-events-none absolute bottom-1 right-1 z-10 text-muted-foreground/50">
+          <MoveDiagonal class="h-4 w-4" />
+        </div>
+      </template>
     </div>
 
     <!-- Image preview -->

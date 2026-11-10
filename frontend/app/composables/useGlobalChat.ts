@@ -11,6 +11,7 @@ import {
     type ChatAction,
 } from '@/lib/chatStream'
 import { applyChatMessageMeta, nextChatMessageUiId } from '@/lib/chatMessages'
+import { maximizeGeometry, viewportFromWindow } from '@/lib/chatWidgetGeometry'
 
 export interface ChatMessage {
     // Stable client-side identity, assigned at creation and never changed — used
@@ -60,6 +61,11 @@ const isPreviewOpen = ref(false)
 // Persisted geometry
 const position = useLocalStorage('qb-chat-widget-position', { x: -1, y: -1 })
 const size = useLocalStorage('qb-chat-widget-size', { width: 400, height: 600 })
+const isMaximized = ref(false)
+const preMaximize = ref<{
+    position: { x: number; y: number }
+    size: { width: number; height: number }
+} | null>(null)
 
 // --- Data state ---
 const sessions = ref<ChatSession[]>([])
@@ -510,7 +516,37 @@ const restore = () => {
     hasUnread.value = false
 }
 
+const maximize = () => {
+    if (typeof window === 'undefined' || isMaximized.value) return
+    preMaximize.value = {
+        position: { ...position.value },
+        size: { ...size.value },
+    }
+    const geometry = maximizeGeometry(viewportFromWindow(window))
+    size.value = { width: geometry.width, height: geometry.height }
+    position.value = { x: geometry.x, y: geometry.y }
+    isMinimized.value = false
+    isMaximized.value = true
+}
+
+const restoreSize = () => {
+    if (!isMaximized.value) return
+    if (preMaximize.value) {
+        position.value = { ...preMaximize.value.position }
+        size.value = { ...preMaximize.value.size }
+    }
+    preMaximize.value = null
+    isMaximized.value = false
+}
+
+const toggleMaximize = () => {
+    if (isMaximized.value) restoreSize()
+    else maximize()
+}
+
 const resetGeometry = () => {
+    isMaximized.value = false
+    preMaximize.value = null
     position.value = { x: -1, y: -1 }
     size.value = { width: 400, height: 600 }
 }
@@ -528,6 +564,7 @@ export const useGlobalChat = () => ({
     isPreviewOpen,
     position,
     size,
+    isMaximized,
     // Data state
     sessions,
     hasMoreSessions,
@@ -574,5 +611,8 @@ export const useGlobalChat = () => ({
     toggle,
     minimize,
     restore,
+    maximize,
+    restoreSize,
+    toggleMaximize,
     resetGeometry,
 })

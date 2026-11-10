@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { Bot, History, MessageSquarePlus, CheckSquare, Minus, Maximize2, X, RotateCcw, ArrowLeft } from '@lucide/vue'
+import { Bot, History, MessageSquarePlus, CheckSquare, Minus, Maximize2, X, RotateCcw, ArrowLeft, Expand, Shrink } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { useGlobalChat } from '@/composables/useGlobalChat'
 
 const chat = useGlobalChat()
+
+const onHeaderDoubleClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (target.closest('button, input, textarea, a')) return
+  chat.toggleMaximize()
+}
 </script>
 
 <template>
   <header
     data-chat-drag-handle
     class="flex h-11 shrink-0 cursor-move select-none items-center gap-1.5 border-b bg-muted/40 px-2"
+    @dblclick="onHeaderDoubleClick"
   >
     <template v-if="chat.view.value === 'history'">
       <Button variant="ghost" size="icon" class="h-7 w-7 cursor-pointer" title="返回聊天"
@@ -41,6 +48,12 @@ const chat = useGlobalChat()
         :class="chat.isSelectionMode.value ? 'bg-accent' : ''" title="多选消息"
         @click="chat.toggleSelectionMode()">
         <CheckSquare class="h-4 w-4" />
+      </Button>
+      <Button v-if="!chat.isMinimized.value" variant="ghost" size="icon" class="h-7 w-7 cursor-pointer"
+        :title="chat.isMaximized.value ? '还原大小' : '最大化'"
+        @click="chat.toggleMaximize()">
+        <Shrink v-if="chat.isMaximized.value" class="h-4 w-4" />
+        <Expand v-else class="h-4 w-4" />
       </Button>
       <Button v-if="!chat.isMinimized.value" variant="ghost" size="icon" class="h-7 w-7 cursor-pointer" title="重置位置与大小"
         @click="chat.resetGeometry()">
