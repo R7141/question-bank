@@ -21,7 +21,7 @@ const chat = useGlobalChat()
 <template>
   <MessageScrollerProvider :auto-scroll="true" default-scroll-position="end">
     <MessageScroller class="min-h-0 flex-1">
-      <MessageScrollerViewport>
+      <MessageScrollerViewport class="overflow-x-hidden">
         <div v-if="chat.hasMore.value" class="flex justify-center px-4 pt-4">
           <Button variant="ghost" size="sm" :disabled="chat.isLoadingMore.value" @click="chat.loadMore()">
             <Loader2 v-if="chat.isLoadingMore.value" class="mr-2 h-4 w-4 animate-spin" />
@@ -52,7 +52,7 @@ const chat = useGlobalChat()
               />
             </div>
 
-            <div :class="['flex flex-1 gap-2', msg.role === 'user' ? 'flex-row-reverse' : '']">
+            <div :class="['flex min-w-0 flex-1 gap-2', msg.role === 'user' ? 'flex-row-reverse' : '']">
               <Avatar class="h-7 w-7">
                 <AvatarFallback :class="msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'">
                   <User v-if="msg.role === 'user'" class="h-3.5 w-3.5" />

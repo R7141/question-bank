@@ -128,9 +128,42 @@ const renderedContent = computed(() => {
 </script>
 
 <template>
-  <div class="prose prose-sm dark:prose-invert max-w-none break-words" v-html="renderedContent"></div>
+  <div class="prose prose-sm dark:prose-invert min-w-0 max-w-full break-words" v-html="renderedContent"></div>
 </template>
 
 <style scoped>
-/* Add any specific markdown styles if needed, though tailwind typography (prose) handles most */
+/* Chat answers can contain wide tables; force them to fit the message bubble. */
+:deep(table) {
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+}
+
+:deep(th),
+:deep(td) {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+:deep(pre) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+:deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+:deep(.katex-display) {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+:deep(p),
+:deep(li) {
+  overflow-wrap: anywhere;
+}
 </style>

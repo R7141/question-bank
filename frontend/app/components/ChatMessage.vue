@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Copy, Check, ExternalLink, Image as ImageIcon, FileDown, Loader2, Pencil, Trash2, X, Save } from '@lucide/vue'
+import { Copy, Check, ChevronDown, ChevronUp, ExternalLink, Image as ImageIcon, FileDown, Loader2, Pencil, Trash2, X, Save } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import MarkdownPreview from '@/components/MarkdownPreview.vue'
@@ -32,6 +32,16 @@ const { $api } = useNuxtApp()
 
 const isEditing = ref(false)
 const editContent = ref('')
+const expandedActions = ref<Set<number>>(new Set())
+
+const isActionExpanded = (index: number) => expandedActions.value.has(index)
+
+const toggleAction = (index: number) => {
+    const next = new Set(expandedActions.value)
+    if (next.has(index)) next.delete(index)
+    else next.add(index)
+    expandedActions.value = next
+}
 
 const startEditing = () => {
     editContent.value = props.content
@@ -189,10 +199,10 @@ const copyContent = () => {
 
 <template>
     <div :class="[
-        'group relative px-4 py-2 rounded-lg max-w-[80%] text-sm',
+        'group relative min-w-0 rounded-lg px-4 py-2 text-sm',
         role === 'user'
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-muted border'
+            ? 'max-w-[80%] bg-primary text-primary-foreground'
+            : 'min-w-0 max-w-full flex-1 bg-muted border'
     ]">
         <!-- Images -->
         <div v-if="images && images.length" class="flex flex-wrap gap-2 mb-2">
@@ -206,18 +216,36 @@ const copyContent = () => {
         </div>
 
         <!-- Actions Log -->
-        <div v-if="actions && actions.length" class="mb-2 space-y-1 max-w-full">
-            <div v-for="(action, i) in actions" :key="i" class="text-xs bg-background/50 p-2 rounded border w-full overflow-hidden">
+        <div v-if="actions && actions.length" class="mb-2 max-w-full min-w-0 space-y-1">
+            <div v-for="(action, i) in actions" :key="i" class="w-full min-w-0 overflow-hidden rounded border bg-background/50 p-2 text-xs">
                 <div class="flex items-center gap-2">
-                    <Loader2 v-if="action.status === 'running'" class="w-3 h-3 animate-spin" />
-                    <Check v-else-if="action.status === 'completed'" class="w-3 h-3 text-green-500" />
-                    <X v-else class="w-3 h-3 text-destructive" />
-                    <span class="font-mono font-bold truncate">{{ action.tool }}</span>
+                    <Loader2 v-if="action.status === 'running'" class="w-3 h-3 shrink-0 animate-spin" />
+                    <Check v-else-if="action.status === 'completed'" class="w-3 h-3 shrink-0 text-green-500" />
+                    <X v-else class="w-3 h-3 shrink-0 text-destructive" />
+                    <span class="min-w-0 flex-1 truncate font-mono font-bold">{{ action.tool }}</span>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="h-6 shrink-0 px-1.5 text-[11px]"
+                        :aria-expanded="isActionExpanded(i)"
+                        @click="toggleAction(i)"
+                    >
+                        <ChevronUp v-if="isActionExpanded(i)" class="mr-1 h-3 w-3" />
+                        <ChevronDown v-else class="mr-1 h-3 w-3" />
+                        {{ isActionExpanded(i) ? '收起' : '展开' }}
+                    </Button>
                 </div>
-                <div class="text-muted-foreground mt-1 truncate" :title="JSON.stringify(action.input)">
+                <div
+                    :class="['mt-1 min-w-0 text-muted-foreground', isActionExpanded(i) ? 'whitespace-pre-wrap break-words' : 'truncate']"
+                    :title="isActionExpanded(i) ? undefined : JSON.stringify(action.input)"
+                >
                     Input: {{ JSON.stringify(action.input) }}
                 </div>
-                <div v-if="action.output" class="text-muted-foreground mt-1 truncate" :title="action.output">
+                <div
+                    v-if="action.output"
+                    :class="['mt-1 min-w-0 text-muted-foreground', isActionExpanded(i) ? 'whitespace-pre-wrap break-words' : 'truncate']"
+                    :title="isActionExpanded(i) ? undefined : action.output"
+                >
                     Output: {{ action.output }}
                 </div>
             </div>
@@ -235,10 +263,10 @@ const copyContent = () => {
                 </Button>
             </div>
         </div>
-        <div v-else-if="role === 'user'" class="whitespace-pre-wrap break-words overflow-x-auto">
+        <div v-else-if="role === 'user'" class="min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words">
             {{ content }}
         </div>
-        <div v-else class="overflow-x-auto">
+        <div v-else class="min-w-0 max-w-full overflow-x-auto">
             <template v-for="(part, index) in parts" :key="index">
                 <MarkdownPreview v-if="part.type === 'text'" :content="part.content" />
                 <SvgRenderer v-else :code="part.content" />
