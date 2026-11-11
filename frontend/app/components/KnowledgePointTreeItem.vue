@@ -17,7 +17,10 @@ const emit = defineEmits<{
 
 const isOpen = ref(false)
 const hasChildren = computed(() => props.node.children.length > 0)
-const isSelected = computed(() => props.selectedIds.includes(String(props.node.id)))
+const isCategory = computed(() => props.node.is_category === true)
+const isSelected = computed(
+  () => !isCategory.value && props.selectedIds.includes(String(props.node.id))
+)
 // While searching, force-expand every branch so matches deep in the tree stay visible.
 const isExpanded = computed(() => (props.search ? true : isOpen.value))
 
@@ -25,7 +28,13 @@ const toggleOpen = (e: Event) => {
   e.stopPropagation()
   if (hasChildren.value) isOpen.value = !isOpen.value
 }
-const toggleSelect = () => emit('toggle', String(props.node.id))
+const toggleSelect = () => {
+  if (isCategory.value) {
+    if (hasChildren.value) isOpen.value = !isOpen.value
+    return
+  }
+  emit('toggle', String(props.node.id))
+}
 
 const nameParts = computed(() => {
   const q = props.search?.trim()
@@ -57,6 +66,7 @@ const nameParts = computed(() => {
       </div>
 
       <div
+        v-if="!isCategory"
         :class="cn(
           'mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-colors',
           isSelected ? 'bg-primary text-primary-foreground' : 'opacity-50 [&_svg]:invisible'
@@ -70,6 +80,9 @@ const nameParts = computed(() => {
 
       <span v-if="nameParts" class="truncate">{{ nameParts.before }}<mark class="bg-primary/20 text-inherit rounded-sm">{{ nameParts.match }}</mark>{{ nameParts.after }}</span>
       <span v-else class="truncate">{{ node.name }}</span>
+      <span v-if="isCategory" class="ml-2 shrink-0 text-[10px] text-muted-foreground/70">
+        {{ node.node_type === 'domain' ? '领域' : '章节' }}
+      </span>
     </div>
 
     <div v-if="isExpanded && hasChildren">

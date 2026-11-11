@@ -64,6 +64,7 @@ def test_registry_exposes_the_expected_tools():
         "propose_questions_batch",
         "search_questions",
         "search_knowledge_points",
+        "get_knowledge_point_relations",
         "get_available_tags",
         "create_composition",
         "write_composition_nodes",

@@ -7,6 +7,13 @@ from .knowledge_point import (
     VectorStatus, ReindexResult,
     KPImportRowError, KPImportResult, KPImportPreflight,
 )
+from .knowledge_graph import (
+    KnowledgeRelationType, KnowledgeRelationTypeCreate, KnowledgeRelationTypeUpdate,
+    KnowledgeRelation, KnowledgeRelationCreate, KnowledgeRelationUpdate,
+    KnowledgeRelationDetail,
+    KnowledgeExternalRef, KnowledgeExternalRefCreate,
+    ImportAction, ImportPreview, ImportResult,
+)
 from .tag import Tag, TagCreate, TagUpdate, TagPage, TagImportRowError, TagImportResult
 from .tag_category import TagCategory, TagCategoryCreate, TagCategoryUpdate
 from .question import Question, QuestionCreate, QuestionUpdate, QuestionPage, QuestionBatchCreate, QuestionReview, QuestionBatchConfirm, QuestionBatchDelete, QuestionBatchUpdate, LegacyQuestionCreate, LegacyQuestionBatchCreate, LegacyBatchError, LegacyBatchResult

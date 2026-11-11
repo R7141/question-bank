@@ -99,7 +99,7 @@ class AIExtractor:
             if not image_data:
                 questions = self._restore_images(questions, image_map)
             await self.enricher.enrich(
-                questions, subject_id=subject_id, provider=provider, config=config
+                questions, subject_id=subject_id, provider=provider, config=config, db=db
             )
             extracted = [q.model_dump() for q in questions]
             return ExtractionResult(questions=_assign_temp_ids(extracted))

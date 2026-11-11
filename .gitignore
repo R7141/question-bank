@@ -13,6 +13,7 @@
 chromadb_data/
 backend/uploads/
 backend/static/media/
+data/imports/
 .pnpm-store/
 *.sqlite
 *.sqlite3

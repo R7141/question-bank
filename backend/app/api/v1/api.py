@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import subjects, knowledge_points, tags, tag_categories, questions, upload, login, users, system_settings, ai_config, chat, tools, activity_logs, import_tasks, prompts, setup, system, subject_prompts, compositions, paper_imports
+from app.api.v1.endpoints import subjects, knowledge_points, knowledge_relations, tags, tag_categories, questions, upload, login, users, system_settings, ai_config, chat, tools, activity_logs, import_tasks, prompts, setup, system, subject_prompts, compositions, paper_imports
 
 api_router = APIRouter()
 api_router.include_router(setup.router, prefix="/setup", tags=["setup"])
@@ -11,6 +11,8 @@ api_router.include_router(subject_prompts.router, prefix="/subjects", tags=["sub
 api_router.include_router(compositions.router, prefix="/subjects", tags=["compositions"])
 api_router.include_router(paper_imports.router, prefix="/subjects", tags=["paper-imports"])
 api_router.include_router(knowledge_points.router, prefix="/knowledge-points", tags=["knowledge-points"])
+api_router.include_router(knowledge_relations.router, prefix="/knowledge-relations", tags=["knowledge-relations"])
+api_router.include_router(knowledge_relations.type_router, prefix="/knowledge-relation-types", tags=["knowledge-relation-types"])
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"])
 api_router.include_router(tag_categories.router, prefix="/tag-categories", tags=["tag-categories"])
 api_router.include_router(questions.router, prefix="/questions", tags=["questions"])

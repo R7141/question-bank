@@ -6,9 +6,12 @@ AI 无返回时回退到最近候选。整段可失败不致命(只 log,不影�
 from __future__ import annotations
 
 import logging
-from typing import Any, List
+from typing import Any, List, Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ai_provider import AIProvider
+from app.services.knowledge_graph.retrieval import graph_context
 from app.services.kp_retriever import KnowledgePointRetriever
 
 logger = logging.getLogger(__name__)
@@ -22,6 +25,7 @@ class KnowledgePointEnricher:
         subject_id: int | None,
         provider: AIProvider,
         config: dict,
+        db: Optional[AsyncSession] = None,
     ) -> None:
         """就地回填 questions[].knowledge_points / knowledge_point_ids。"""
         batch_items = []
@@ -58,10 +62,25 @@ class KnowledgePointEnricher:
                     else:
                         filtered_candidates = candidates
 
+                    graph_text = None
+                    if db is not None and candidate_ids:
+                        try:
+                            ids = [
+                                int(raw_id) for raw_id in candidate_ids
+                                if str(raw_id).isdigit()
+                            ]
+                            graph_text = await graph_context.context_for_ids(
+                                db, ids=ids, subject_id=subject_id
+                            )
+                        except Exception as ctx_e:
+                            # 图谱上下文失败不影响原有向量 + rerank 流程。
+                            logger.warning("Knowledge graph context failed: %s", ctx_e)
+
                     batch_items.append({
                         "id": str(i),
                         "content": q.content,
                         "candidates": filtered_candidates,
+                        "context": graph_text,
                     })
 
                     batch_context[str(i)] = {

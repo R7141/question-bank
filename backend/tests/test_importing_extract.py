@@ -52,7 +52,7 @@ class _StubPromptBuilder:
 
 
 class _StubEnricher:
-    async def enrich(self, questions, *, subject_id, provider, config):
+    async def enrich(self, questions, *, subject_id, provider, config, db=None):
         return None
 
 

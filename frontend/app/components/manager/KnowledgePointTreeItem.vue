@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Folder, FolderOpen, Save, X, GripVertical } from '@lucide/vue'
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Folder, FolderOpen, Save, X, GripVertical, Network } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { KnowledgePoint } from '@/types'
@@ -22,10 +22,12 @@ const emit = defineEmits<{
   (e: 'delete', id: number): void
   (e: 'create', parentId: number, data: { name: string, slug: string }): void
   (e: 'move', draggedId: number, targetId: number): void
+  (e: 'relations', id: number): void
 }>()
 
 const isOpen = ref(false)
 const hasChildren = computed(() => props.knowledgePoint.children && props.knowledgePoint.children.length > 0)
+const isCategory = computed(() => props.knowledgePoint.is_category === true)
 
 // --- Inline Edit State ---
 const isEditing = ref(false)
@@ -180,6 +182,18 @@ watch(newName, (val) => {
         <span class="ml-2 text-xs text-muted-foreground font-normal">
           /{{ knowledgePoint.slug }}
         </span>
+        <span
+          v-if="isCategory"
+          class="ml-2 rounded border border-muted-foreground/30 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground"
+        >
+          {{ knowledgePoint.node_type === 'domain' ? '领域' : '章节' }}
+        </span>
+        <span
+          v-else-if="knowledgePoint.node_type"
+          class="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground"
+        >
+          {{ knowledgePoint.node_type }}
+        </span>
       </span>
 
       <!-- Actions (Visible on Hover) -->
@@ -192,6 +206,16 @@ watch(newName, (val) => {
           title="添加子目录"
         >
           <Plus class="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          v-if="!isCategory"
+          variant="ghost"
+          size="icon"
+          class="h-7 w-7"
+          @click.stop="$emit('relations', knowledgePoint.id)"
+          title="知识关系"
+        >
+          <Network class="w-3.5 h-3.5" />
         </Button>
         <Button 
           variant="ghost" 
@@ -227,6 +251,7 @@ watch(newName, (val) => {
         @delete="(id) => $emit('delete', id)"
         @create="(pid, data) => $emit('create', pid, data)"
         @move="(did, tid) => $emit('move', did, tid)"
+        @relations="(id) => $emit('relations', id)"
       />
 
       <!-- Inline Create Form -->

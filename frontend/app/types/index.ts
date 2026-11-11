@@ -109,6 +109,87 @@ export interface KnowledgePoint {
   slug: string
   subject_id: number
   parent_id?: number
+  description?: string | null
+  node_type?: string | null
+  grade?: string | null
+  chapter?: string | null
+  learning_requirement?: string | null
+  attributes?: Record<string, unknown> | null
+  source?: string | null
+  is_category?: boolean
+}
+
+export interface KnowledgeRelationType {
+  id: number
+  code: string
+  name: string
+  category?: string | null
+  is_directed: boolean
+  description?: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeRelation {
+  id: number
+  subject_id: number
+  source_id: number
+  target_id: number
+  relation_type_id: number
+  description?: string | null
+  weight?: number | null
+  source?: string | null
+  status: string
+  confidence?: number | null
+  attributes?: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeRelationDetail extends KnowledgeRelation {
+  relation_type?: KnowledgeRelationType | null
+  source_point?: KnowledgePoint | null
+  target_point?: KnowledgePoint | null
+}
+
+export interface ImportAction {
+  external_id: string
+  name: string
+  node_type: string
+  action: 'create' | 'link' | 'update' | 'skip' | 'conflict'
+  reason?: string | null
+}
+
+export interface KnowledgeImportPreview {
+  source: string
+  subject_id: number
+  checksum: string
+  total_nodes: number
+  total_relations: number
+  to_create: number
+  to_link: number
+  to_update: number
+  skipped: number
+  conflicts: number
+  relations_to_create: number
+  relations_skipped: number
+  actions: ImportAction[]
+  errors: string[]
+}
+
+export interface KnowledgeImportResult {
+  source: string
+  subject_id: number
+  created_nodes: number
+  linked_nodes: number
+  updated_nodes: number
+  created_relations: number
+  skipped_relations: number
+  vector_synced: boolean
+  duration: number
+  errors: string[]
 }
 
 export interface VectorStatus {

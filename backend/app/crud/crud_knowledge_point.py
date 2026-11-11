@@ -1,9 +1,9 @@
 from typing import List, Optional, Union, Dict, Any
 from slugify import slugify
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, text
+from sqlalchemy import select, update, delete, text, or_
 from app.crud.base import CRUDBase
-from app.models.knowledge_point import KnowledgePoint
+from app.models.knowledge_point import CATEGORY_NODE_TYPES, KnowledgePoint
 from app.schemas.knowledge_point import KnowledgePointCreate, KnowledgePointUpdate
 from app.services.activity_logger import log_activity
 from app.core.vector_store import VectorStore
@@ -50,6 +50,9 @@ class CRUDKnowledgePoint(CRUDBase[KnowledgePoint, KnowledgePointCreate, Knowledg
         """
         Sync a knowledge point to the vector store.
         """
+        # 分类节点只用于组织树，不进入向量索引和 AI 候选。
+        if kp.node_type in CATEGORY_NODE_TYPES:
+            return
         # Deferred indexing: skip entirely when no embedding model is configured.
         # The user can trigger a manual reindex later via reindex_vectors().
         if not VectorStore.is_available():
@@ -116,8 +119,74 @@ class CRUDKnowledgePoint(CRUDBase[KnowledgePoint, KnowledgePointCreate, Knowledg
             
         return obj
 
-    async def get_by_subject(self, db: AsyncSession, subject_id: int, skip: int = 0, limit: Optional[int] = 100) -> List[KnowledgePoint]:
-        query = select(self.model).filter(self.model.subject_id == subject_id).offset(skip)
+    def _apply_node_filters(
+        self,
+        query,
+        *,
+        include_categories: bool = True,
+        node_type: Optional[str] = None,
+    ):
+        if not include_categories:
+            query = query.filter(
+                (self.model.node_type.is_(None))
+                | (self.model.node_type.notin_(CATEGORY_NODE_TYPES))
+            )
+        if node_type:
+            query = query.filter(self.model.node_type == node_type)
+        return query
+
+    async def get_multi(
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: Optional[int] = 100,
+        *,
+        include_categories: bool = True,
+        node_type: Optional[str] = None,
+    ) -> List[KnowledgePoint]:
+        query = self._apply_node_filters(
+            select(self.model).offset(skip),
+            include_categories=include_categories,
+            node_type=node_type,
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    async def get_by_subject(
+        self,
+        db: AsyncSession,
+        subject_id: int,
+        skip: int = 0,
+        limit: Optional[int] = 100,
+        *,
+        include_categories: bool = True,
+        node_type: Optional[str] = None,
+    ) -> List[KnowledgePoint]:
+        query = self._apply_node_filters(
+            select(self.model).filter(self.model.subject_id == subject_id).offset(skip),
+            include_categories=include_categories,
+            node_type=node_type,
+        )
+        if limit is not None and limit != -1:
+            query = query.limit(limit)
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    async def get_indexable_by_subject(
+        self, db: AsyncSession, subject_id: int, skip: int = 0, limit: Optional[int] = 100
+    ) -> List[KnowledgePoint]:
+        """真实知识点（排除 domain/chapter 分类节点），用于向量计数与重建。"""
+        query = (
+            select(self.model)
+            .filter(self.model.subject_id == subject_id)
+            .filter(
+                (self.model.node_type.is_(None))
+                | (self.model.node_type.notin_(CATEGORY_NODE_TYPES))
+            )
+            .offset(skip)
+        )
         if limit is not None and limit != -1:
             query = query.limit(limit)
         result = await db.execute(query)
@@ -258,12 +327,15 @@ class CRUDKnowledgePoint(CRUDBase[KnowledgePoint, KnowledgePointCreate, Knowledg
             raise ValueError("Embedding model is not configured.")
 
         if subject_id is not None:
-            kps = await self.get_by_subject(db, subject_id=subject_id, limit=None)
+            kps = await self.get_indexable_by_subject(db, subject_id=subject_id, limit=None)
             # Remove any stale vectors for this subject before re-adding.
             VectorStore.delete_knowledge_points_batch([kp.id for kp in kps])
         else:
             VectorStore.reset_collection()
-            kps = await self.get_multi(db, limit=None)
+            kps = [
+                kp for kp in await self.get_multi(db, limit=None)
+                if kp.node_type not in CATEGORY_NODE_TYPES
+            ]
 
         items: List[Dict[str, Any]] = []
         for kp in kps:
